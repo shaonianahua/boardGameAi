@@ -5,7 +5,7 @@
 - 来源文件：`/Users/lich/Downloads/Splendor.xlsx`。
 - 本次从表格中解析到 89 张发展卡和 10 个贵族。
 - 基础版通常应为 90 张发展卡；当前源文件少 1 张等级 II 发展卡，缺口表现为等级 II 蓝色奖励卡少 1 张。
-- PDF 表头顺序为 `Card Color`、`Points`、`Cost [Black]`、`Cost [White]`、`Cost [Red]`、`Cost [Blue]`、`Cost [Green]`。按该顺序核对，缺失卡为蓝色奖励、1 分、成本白 0 / 蓝 2 / 绿 3 / 红 0 / 黑 3。
+- 针对 PDF 中补充的缺失卡，表头顺序为 `Card Color`、`Points`、`Cost [Black]`、`Cost [White]`、`Cost [Red]`、`Cost [Blue]`、`Cost [Green]`。按该顺序核对，缺失卡为蓝色奖励、1 分、成本白 0 / 蓝 2 / 绿 3 / 红 0 / 黑 3。
 - `Splendor_Card_List_with_Pics.pdf` 主要用于图片呈现，本次未从 PDF 补充字段。
 - 发展卡没有额外文字效果；每张发展卡的作用是提供 1 个对应颜色的永久奖励，部分发展卡提供声望分。
 - 贵族没有购买成本；贵族需求表示玩家需要拥有对应颜色数量的发展卡奖励，满足后可获得贵族分数。

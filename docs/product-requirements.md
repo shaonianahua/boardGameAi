@@ -35,7 +35,7 @@
 
 ## 建议的 Flutter 代码方向
 
-初期可以采用按功能拆分的结构：
+初期可以采用按页面和模块拆分的结构：
 
 ```text
 lib/
@@ -44,11 +44,12 @@ lib/
 │   ├── app.dart
 │   ├── routes.dart
 │   └── theme.dart
-├── features/
+├── models/
 │   └── splendor/
-│       ├── presentation/
-│       ├── application/
-│       └── domain/
+├── pages/
+│   └── splendor/
+├── services/
+│   └── splendor/
 └── shared/
     ├── widgets/
     └── utils/
@@ -56,9 +57,9 @@ lib/
 
 其中：
 
-- `presentation` 放 Flutter 页面和组件。
-- `application` 放对局流程控制、状态管理、用例编排。
-- `domain` 放璀璨宝石的核心规则、实体和状态。
+- `models` 放可复用的数据模型，不绑定页面。
+- `pages` 放页面、Controller 和页面内组件。
+- `services` 放固定数据、规则判断和对局推进逻辑。
 - `shared` 只放真正跨功能复用的内容。
 
 ## AI 接入预留方向
