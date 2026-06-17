@@ -47,8 +47,32 @@ frontend/lib/
 │   ├── index/
 │   │   └── index_page.dart
 │   └── splendor/
-│       ├── splendor_create_session_page.dart
-│       └── splendor_table_page.dart
+│       ├── splendor_table_page.dart
+│       ├── create_session/
+│       │   ├── player_count_selector.dart
+│       │   ├── splendor_create_session_controller.dart
+│       │   └── splendor_create_session_page.dart
+│       └── table/
+│           ├── splendor_card_style_helpers.dart
+│           ├── splendor_catalog_lookup.dart
+│           ├── splendor_table_controller.dart
+│           ├── actions/
+│           │   ├── legal_actions_panel.dart
+│           │   └── take_tokens_panel.dart
+│           └── widgets/
+│               ├── splendor_cost_chip.dart
+│               ├── splendor_cost_wrap.dart
+│               ├── splendor_development_card_tile.dart
+│               ├── splendor_gem_chip.dart
+│               ├── splendor_info_card.dart
+│               ├── splendor_market_card.dart
+│               ├── splendor_market_section.dart
+│               ├── splendor_noble_card.dart
+│               ├── splendor_noble_tile.dart
+│               ├── splendor_player_summary_card.dart
+│               ├── splendor_players_card.dart
+│               ├── splendor_token_pool_card.dart
+│               └── splendor_turn_header.dart
 ├── services/
 │   └── splendor/
 └── shared/
@@ -568,15 +592,78 @@ Get.toNamed(AppRoutes.splendorCreateSession);
 - 玩家类型当前默认 `SplendorPlayerType.human`，未明确 Bot 需求前不要添加额外字段。
 - 新增创建参数时，必须先确认后端接口和需求，再更新 `SplendorCreateSessionInput` 与本文档。
 
+### `frontend/lib/pages/splendor/create_session/splendor_create_session_controller.dart`
+
+职责：
+
+- 管理创建对局页的表单状态。
+- 维护玩家人数、玩家名称输入框和提交状态。
+- 调用 `SplendorApi.createSession` 创建对局。
+- 创建成功后跳转到 `AppRoutes.splendorTable`。
+
+核心类：
+
+- `SplendorCreateSessionController extends GetxController`
+
+核心成员：
+
+- `playerCount`：当前玩家人数。
+- `isSubmitting`：是否正在创建对局。
+- `nameControllers`：固定 4 个输入框控制器，覆盖 2-4 人。
+
+核心方法：
+
+- `setPlayerCount(int value)`：切换玩家人数。
+- `createSession()`：校验名称、提交创建对局请求、处理成功跳转和错误提示。
+
+用法：
+
+```dart
+final controller = Get.put(SplendorCreateSessionController());
+```
+
+维护规则：
+
+- 表单状态优先放在 controller，不要再堆在页面 build 里。
+- 创建参数发生变化时，先确认后端接口，再改 controller。
+
+### `frontend/lib/pages/splendor/create_session/player_count_selector.dart`
+
+职责：
+
+- 创建对局页里的 2-4 人选择控件。
+- 只负责人数切换，不承载其它表单逻辑。
+
+核心类：
+
+- `PlayerCountSelector extends StatelessWidget`
+
+核心方法：
+
+- `build(BuildContext context)`：渲染 `SegmentedButton<int>`。
+
+用法：
+
+```dart
+PlayerCountSelector(
+  playerCount: controller.playerCount.value,
+  onChanged: controller.setPlayerCount,
+)
+```
+
+维护规则：
+
+- 这个控件只属于创建对局页，不要提前抽到 `shared/`。
+
 ### `frontend/lib/pages/splendor/splendor_table_page.dart`
 
 职责：
 
 - 璀璨宝石对局桌面页。
 - 接收创建对局返回的 `SplendorSessionResponse`。
-- 展示当前回合、公共宝石池、市场卡牌详情、贵族详情和玩家摘要。
-- 调用 `SplendorApi.getCatalog`，把 `GameState` 中的卡牌/贵族 ID 映射成可读卡面信息。
+- 使用紧凑棋盘式布局展示对手摘要、公共宝石池、市场卡牌详情、贵族详情、当前玩家和行动区。
 - 提供刷新按钮，通过 `SplendorApi.getSession` 重新拉取当前状态。
+- 当前玩家摘要固定展示玩家手里的各色宝石、分数、永久 bonus 和预留数量。
 
 核心类：
 
@@ -584,36 +671,10 @@ Get.toNamed(AppRoutes.splendorCreateSession);
 
 页面内部私有组件：
 
-- `_SessionContent`：对局主体展示区。
-- `_TurnHeader`：当前回合摘要。
-- `_TokenPoolCard`：公共 token 池展示卡。
-- `_MarketCard`：市场卡牌展示卡，把卡牌 ID 映射成分数、奖励颜色和购买费用。
-- `_NobleCard`：贵族展示卡，把贵族 ID 映射成分数和到访需求。
-- `_PlayersCard`：玩家状态摘要卡。
-- `_InfoCard`：桌面页内部通用信息卡。
-- `_MarketLevelSection`：单个等级的市场卡牌区域。
-- `_DevelopmentCardTile`：发展卡简化卡面，展示等级、分数、奖励颜色和购买费用。
-- `_NobleTile`：贵族简化卡面，展示分数和到访所需永久宝石。
-- `_CostWrap`：宝石费用或需求集合展示。
-- `_CostChip`：单个颜色费用标签。
-- `_MissingCatalogTile`：catalog 未加载到对应 ID 时的兜底展示。
-- `_CatalogLoadingText`：catalog 正在加载时的说明文本。
-- `_PlayerSummaryRow`：玩家分数、token、bonus 和预留数量摘要。
-- `_GemChip`：宝石数量标签。
+- `_OpponentStrip`：顶部对手摘要条。
+- `_CompactOpponentCard`：单个对手的紧凑摘要。
+- `_TurnPrompt`：当前回合提示。
 - `_EmptySessionView`：路由参数缺失时的空状态。
-
-核心方法：
-
-- `_loadCatalog()`：读取固定 catalog，并保存到页面状态供卡牌/贵族展示使用。
-- `_refreshSession()`：按当前 `session.id` 拉取后端最新对局快照。
-- `_showMessage(String message)`：用 `Get.snackbar` 显示对局页提示。
-- `_tokenTotal(SplendorTokenSet tokens)`：计算玩家 token 总数。
-- `_bonusTotal(SplendorGemSet bonuses)`：计算玩家永久 bonus 总数。
-- `_nonZeroGemEntries(SplendorGemSet gems)`：提取非 0 宝石条目，供费用和需求展示使用。
-- `_levelLabel(int level)`：把后端等级数字转成 UI 展示文本。
-- `_gemName(String colorKey)` / `_gemShortName(String colorKey)`：把宝石颜色 key 转成中文。
-- `_gemColor(String colorKey)`：把宝石颜色 key 转成 UI 颜色。
-- `_readableTextColor(Color backgroundColor)`：根据背景亮度选择可读文字色。
 
 用法：
 
@@ -627,6 +688,266 @@ Get.offNamed(AppRoutes.splendorTable, arguments: sessionResponse);
 - 行动按钮应优先基于 `SplendorApi.getLegalActions` 返回内容展示。
 - 提交行动后使用 `SplendorApi.submitAction` 返回的新 `state` 刷新页面。
 - 本页不重新实现后端已有的规则判断，只做必要的 UI 禁用和提示。
+- 页面只拼接布局，接口请求和状态变更放在 `SplendorTableController`。
+
+### `frontend/lib/pages/splendor/table/splendor_table_controller.dart`
+
+职责：
+
+- 管理桌面页的对局状态、catalog 和合法行动。
+- 调用 `getCatalog`、`getSession`、`getLegalActions` 和 `submitAction`。
+- 维护刷新、加载和提交中的状态。
+
+核心类：
+
+- `SplendorTableController extends GetxController`
+
+核心成员：
+
+- `sessionResponse`：当前对局快照。
+- `catalog`：固定图鉴。
+- `legalActions`：当前合法行动。
+- `isRefreshing`：对局刷新状态。
+- `isLoadingCatalog`：图鉴加载状态。
+- `isLoadingLegalActions`：合法行动加载状态。
+- `isSubmittingAction`：行动提交状态。
+
+核心方法：
+
+- `initialize(SplendorSessionResponse? initialSessionResponse)`：接收进入桌面页时的初始对局。
+- `loadCatalog()`：拉取 catalog。
+- `refreshSession()`：拉取当前对局快照。
+- `loadLegalActions()`：拉取当前合法行动。
+- `submitLegalAction(SplendorLegalAction legalAction)`：提交后端返回的合法行动。
+
+用法：
+
+```dart
+final controller = Get.put(SplendorTableController());
+controller.initialize(sessionResponse);
+```
+
+维护规则：
+
+- 桌面页所有接口编排优先放到 controller，不要再写进页面 build。
+- `legalActions` 必须以后端为准，前端不自己推导合法性。
+
+### `frontend/lib/pages/splendor/table/splendor_catalog_lookup.dart`
+
+职责：
+
+- 把 catalog 响应整理成卡牌 ID 和贵族 ID 的索引。
+- 供桌面页把 GameState 中的 ID 映射成可读卡牌详情。
+
+核心类：
+
+- `SplendorCatalogLookup`
+
+核心成员：
+
+- `cardsById`
+- `noblesById`
+
+用法：
+
+```dart
+final lookup = SplendorCatalogLookup(controller.catalog.value);
+```
+
+维护规则：
+
+- 只做索引，不做规则判断。
+
+### `frontend/lib/pages/splendor/table/actions/legal_actions_panel.dart`
+
+职责：
+
+- 桌面页的合法行动面板。
+- 这里只展示状态说明，不再承载拿宝石点击操作。
+
+核心类：
+
+- `LegalActionsPanel`
+
+核心方法：
+
+- `build(BuildContext context)`：根据合法行动和加载状态展示行动面板。
+
+### `frontend/lib/pages/splendor/table/actions/take_tokens_panel.dart`
+
+职责：
+
+- 拿宝石行动面板。
+- 用户通过点击圆形宝石形成选择。
+- 用后端返回的合法 `take_tokens` 行动判断当前选择是否可提交。
+- 点击式拿宝石操作实际放在公共宝石池区域。
+
+核心类：
+
+- `TakeTokensPanel`
+
+核心方法：
+
+- `build(BuildContext context)`：把合法拿宝石行动渲染成可点击宝石选择器。
+
+维护规则：
+
+- 这里不自己推完整规则，只用后端合法列表判断当前选择能否继续或提交。
+
+### `frontend/lib/pages/splendor/table/widgets/splendor_info_card.dart`
+
+职责：
+
+- 桌面页内部通用信息卡。
+- 统一标题、内边距和卡片样式。
+
+核心类：
+
+- `SplendorInfoCard`
+
+### `frontend/lib/pages/splendor/table/widgets/splendor_market_card.dart`
+
+职责：
+
+- 桌面页市场卡牌区域。
+- 把市场卡牌 ID 映射成真实卡面。
+
+核心类：
+
+- `SplendorMarketCard`
+
+### `frontend/lib/pages/splendor/table/widgets/splendor_noble_card.dart`
+
+职责：
+
+- 桌面页贵族区域。
+- 把贵族 ID 映射成真实贵族需求。
+
+核心类：
+
+- `SplendorNobleCard`
+
+### `frontend/lib/pages/splendor/table/widgets/splendor_players_card.dart`
+
+职责：
+
+- 桌面页玩家摘要区域。
+
+核心类：
+
+- `SplendorPlayersCard`
+
+### `frontend/lib/pages/splendor/table/widgets/splendor_turn_header.dart`
+
+职责：
+
+- 桌面页当前回合摘要。
+
+核心类：
+
+- `SplendorTurnHeader`
+
+### `frontend/lib/pages/splendor/table/widgets/splendor_token_pool_card.dart`
+
+职责：
+
+- 桌面页公共 token 池展示。
+
+核心类：
+
+- `SplendorTokenPoolCard`
+
+### `frontend/lib/pages/splendor/table/widgets/splendor_market_section.dart`
+
+职责：
+
+- 桌面页单个等级的市场卡牌区域。
+
+核心类：
+
+- `SplendorMarketSection`
+
+### `frontend/lib/pages/splendor/table/widgets/splendor_development_card_tile.dart`
+
+职责：
+
+- 桌面页发展卡简化卡面。
+
+核心类：
+
+- `SplendorDevelopmentCardTile`
+- 固定高度发展卡卡面，避免因费用换行造成高度不一致。
+
+### `frontend/lib/pages/splendor/table/widgets/splendor_noble_tile.dart`
+
+职责：
+
+- 桌面页贵族简化卡面。
+
+核心类：
+
+- `SplendorNobleTile`
+
+### `frontend/lib/pages/splendor/table/widgets/splendor_player_summary_card.dart`
+
+职责：
+
+- 桌面页单个玩家摘要。
+
+核心类：
+
+- `SplendorPlayerSummaryCard`
+- 当前玩家摘要会固定展示各色宝石圆点，方便直接看手牌资源。
+
+### `frontend/lib/pages/splendor/table/widgets/splendor_gem_chip.dart`
+
+职责：
+
+- 桌面页宝石数量标签。
+
+核心类：
+
+- `SplendorGemChip`
+
+### `frontend/lib/pages/splendor/table/widgets/splendor_cost_wrap.dart`
+
+职责：
+
+- 桌面页费用或需求集合展示。
+
+核心类：
+
+- `SplendorCostWrap`
+
+### `frontend/lib/pages/splendor/table/widgets/splendor_cost_chip.dart`
+
+职责：
+
+- 桌面页单个颜色费用标签。
+
+核心类：
+
+- `SplendorCostChip`
+
+### `frontend/lib/pages/splendor/table/splendor_card_style_helpers.dart`
+
+职责：
+
+- 桌面页卡牌样式辅助方法。
+- 提供颜色、等级、文字可读性和缺失兜底组件。
+
+核心类：
+
+- `SplendorMissingCatalogTile`
+
+核心方法：
+
+- `nonZeroGemEntries(SplendorGemSet gems)`
+- `levelLabel(int level)`
+- `gemName(String colorKey)`
+- `gemShortName(String colorKey)`
+- `gemColor(String colorKey)`
+- `readableTextColor(Color backgroundColor)`
 
 ### `frontend/lib/shared/widgets/mobile_viewport.dart`
 
@@ -790,18 +1111,8 @@ final textTheme = Theme.of(context).textTheme;
 ### 网络
 
 - 网络请求统一走 `ApiClient`。
-- 业务接口文件后续放在对应模块服务目录，例如 `services/splendor/`。
-- 模块服务通过构造函数接收 `ApiClient`，不要在页面里直接创建 Dio。
-
-示例：
-
-```dart
-class SplendorRemoteService {
-  SplendorRemoteService(this._apiClient);
-
-  final ApiClient _apiClient;
-}
-```
+- 业务接口编排优先放在 `pages/splendor/*_controller.dart`。
+- 页面只负责展示，接口调用和状态推进交给 controller。
 
 ### 资源
 
@@ -865,8 +1176,8 @@ class SplendorRemoteService {
 
 下一步建议按以下顺序增加文件，并同步更新本文档：
 
-1. 接入 `SplendorApi.getLegalActions`，展示当前玩家可执行行动入口。
-2. 接入 `SplendorApi.submitAction`，完成拿宝石、预留、购买的首批交互。
+1. 接入 `reserve_card` 预留卡交互。
+2. 接入 `buy_card` 购买卡交互。
 3. 处理 `pendingAction`：弃宝石和选择贵族。
 4. 继续优化卡面排版，必要时再把卡牌/贵族 tile 抽成可复用组件。
 

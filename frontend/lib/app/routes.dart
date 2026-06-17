@@ -1,7 +1,7 @@
 import 'package:get/get.dart';
 
 import '../pages/index/index_page.dart';
-import '../pages/splendor/splendor_create_session_page.dart';
+import '../pages/splendor/create_session/splendor_create_session_page.dart';
 import '../pages/splendor/splendor_table_page.dart';
 
 /// App 路由集中登记表。
