@@ -20,6 +20,99 @@ test('generates legal actions for an active session', () => {
   assert.ok(result.actions.some((item) => item.action.type === 'reserve_card'));
 });
 
+test('allows taking two different tokens when only two gem colors remain', () => {
+  const state: SplendorGameState = {
+    ...createTwoPlayerState(),
+    tokenPool: {
+      white: 2,
+      blue: 3,
+      green: 0,
+      red: 0,
+      black: 0,
+      gold: 5,
+    },
+  };
+
+  const result = generateSplendorLegalActions(state);
+  assert.ok(
+    result.actions.some((item) => {
+      if (item.action.type !== 'take_tokens') return false;
+      return item.action.tokens.white === 1 && item.action.tokens.blue === 1;
+    }),
+  );
+
+  const afterTake = applySplendorAction(state, 0, {
+    type: 'take_tokens',
+    tokens: { white: 1, blue: 1 },
+  });
+
+  assert.equal(afterTake.players[0].tokens.white, 1);
+  assert.equal(afterTake.players[0].tokens.blue, 1);
+  assert.equal(afterTake.pendingAction, null);
+  assert.equal(afterTake.currentPlayerIndex, 1);
+});
+
+test('allows taking two different tokens with six held tokens when only two gem colors remain', () => {
+  const state = createTwoPlayerState();
+  const sixTokenState: SplendorGameState = {
+    ...state,
+    tokenPool: {
+      white: 2,
+      blue: 3,
+      green: 0,
+      red: 0,
+      black: 0,
+      gold: 5,
+    },
+    players: state.players.map((player, index) =>
+      index === 0
+        ? {
+            ...player,
+            tokens: {
+              white: 1,
+              blue: 1,
+              green: 1,
+              red: 1,
+              black: 1,
+              gold: 1,
+            },
+          }
+        : player,
+    ),
+  };
+
+  const result = generateSplendorLegalActions(sixTokenState);
+  assert.ok(
+    result.actions.some((item) => {
+      if (item.action.type !== 'take_tokens') return false;
+      return item.action.tokens.white === 1 && item.action.tokens.blue === 1;
+    }),
+  );
+
+  const afterTake = applySplendorAction(sixTokenState, 0, {
+    type: 'take_tokens',
+    tokens: { white: 1, blue: 1 },
+  });
+
+  assert.equal(afterTake.players[0].tokens.white, 2);
+  assert.equal(afterTake.players[0].tokens.blue, 2);
+  assert.equal(afterTake.pendingAction, null);
+  assert.equal(afterTake.currentPlayerIndex, 1);
+});
+
+test('does not allow taking two different tokens when at least three gem colors remain', () => {
+  const state = createTwoPlayerState();
+
+  assert.throws(
+    () =>
+      applySplendorAction(state, 0, {
+        type: 'take_tokens',
+        tokens: { white: 1, blue: 1 },
+      }),
+    /taking 2 tokens requires one color/,
+  );
+});
+
 test('enters discard pending action and resolves it before advancing turn', () => {
   const state = createTwoPlayerState();
   const overloadedState: SplendorGameState = {
@@ -59,6 +152,53 @@ test('enters discard pending action and resolves it before advancing turn', () =
 
   const legalActions = generateSplendorLegalActions(afterTake);
   assert.ok(legalActions.actions.every((item) => item.action.type === 'discard_tokens'));
+
+  const afterDiscard = applySplendorAction(afterTake, 0, {
+    type: 'discard_tokens',
+    tokens: { white: 1, blue: 1, green: 1 },
+  });
+
+  assert.equal(afterDiscard.pendingAction, null);
+  assert.equal(afterDiscard.currentPlayerIndex, 1);
+});
+
+test('allows taking tokens at ten held tokens before discarding back to ten', () => {
+  const state = createTwoPlayerState();
+  const fullHandState: SplendorGameState = {
+    ...state,
+    tokenPool: {
+      white: 4,
+      blue: 4,
+      green: 4,
+      red: 4,
+      black: 4,
+      gold: 5,
+    },
+    players: state.players.map((player, index) =>
+      index === 0
+        ? {
+            ...player,
+            tokens: {
+              white: 2,
+              blue: 2,
+              green: 2,
+              red: 2,
+              black: 2,
+              gold: 0,
+            },
+          }
+        : player,
+    ),
+  };
+
+  const afterTake = applySplendorAction(fullHandState, 0, {
+    type: 'take_tokens',
+    tokens: { white: 1, blue: 1, green: 1 },
+  });
+
+  assert.equal(afterTake.pendingAction?.type, 'discard_tokens');
+  assert.equal(afterTake.pendingAction?.tokenCount, 13);
+  assert.equal(afterTake.currentPlayerIndex, 0);
 
   const afterDiscard = applySplendorAction(afterTake, 0, {
     type: 'discard_tokens',

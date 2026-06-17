@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:get/get.dart';
 
+import 'controller/splendor_create_session_controller.dart';
 import 'player_count_selector.dart';
-import 'splendor_create_session_controller.dart';
 
 /// 璀璨宝石创建对局页。
 ///

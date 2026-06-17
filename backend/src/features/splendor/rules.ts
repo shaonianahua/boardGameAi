@@ -87,11 +87,16 @@ function applyTakeTokens(state: SplendorGameState, player: SplendorPlayerState, 
 
   const selectedColors = gemColors.filter((color) => normalized[color] > 0);
   const total = selectedColors.reduce((sum, color) => sum + normalized[color], 0);
+  const availableColorCount = gemColors.filter((color) => state.tokenPool[color] > 0).length;
+  const requiredDifferentColorCount = Math.min(3, availableColorCount);
+  const isTakingAvailableDifferentColors =
+    requiredDifferentColorCount > 0 &&
+    total === requiredDifferentColorCount &&
+    selectedColors.length === requiredDifferentColorCount &&
+    selectedColors.every((color) => normalized[color] === 1);
 
-  if (total === 3) {
-    if (selectedColors.length !== 3 || selectedColors.some((color) => normalized[color] !== 1)) {
-      throw new Error('taking 3 tokens requires 3 different colors');
-    }
+  if (isTakingAvailableDifferentColors) {
+    // Taking different colors uses up to 3 available gem colors; if only 1-2 colors remain, taking fewer is legal.
   } else if (total === 2) {
     if (selectedColors.length !== 1) {
       throw new Error('taking 2 tokens requires one color');
@@ -101,7 +106,7 @@ function applyTakeTokens(state: SplendorGameState, player: SplendorPlayerState, 
       throw new Error('taking 2 same-color tokens requires at least 4 in pool');
     }
   } else {
-    throw new Error('take_tokens must take either 2 same-color or 3 different-color tokens');
+    throw new Error('take_tokens must take 2 same-color tokens or available different-color tokens');
   }
 
   for (const color of gemColors) {
@@ -468,21 +473,37 @@ function discardCombinations(tokens: FullTokenSet, count: number): TokenSet[] {
   return results;
 }
 
+function colorCombinations<T>(items: T[], count: number): T[][] {
+  const results: T[][] = [];
+
+  function visit(startIndex: number, selected: T[]): void {
+    if (selected.length === count) {
+      results.push(selected);
+      return;
+    }
+
+    for (let index = startIndex; index < items.length; index += 1) {
+      visit(index + 1, [...selected, items[index]]);
+    }
+  }
+
+  visit(0, []);
+  return results;
+}
+
 function appendTakeTokenActions(state: SplendorGameState, actions: SplendorLegalAction[]): void {
-  for (let left = 0; left < gemColors.length; left += 1) {
-    for (let middle = left + 1; middle < gemColors.length; middle += 1) {
-      for (let right = middle + 1; right < gemColors.length; right += 1) {
-        const colors = [gemColors[left], gemColors[middle], gemColors[right]];
-        if (colors.every((color) => state.tokenPool[color] > 0)) {
-          actions.push({
-            action: {
-              type: 'take_tokens',
-              tokens: tokenSetFromEntries(colors.map((color) => [color, 1])),
-            },
-            label: `Take ${colors.join(', ')}`,
-          });
-        }
-      }
+  const availableColors = gemColors.filter((color) => state.tokenPool[color] > 0);
+  const differentColorCount = Math.min(3, availableColors.length);
+
+  for (const colors of colorCombinations(availableColors, differentColorCount)) {
+    if (colors.length > 0) {
+      actions.push({
+        action: {
+          type: 'take_tokens',
+          tokens: tokenSetFromEntries(colors.map((color) => [color, 1])),
+        },
+        label: `Take ${colors.join(', ')}`,
+      });
     }
   }
 

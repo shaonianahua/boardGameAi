@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
-import '../../../api/splendor_api.dart';
-import '../../../app/routes.dart';
-import '../../../models/api_models.dart';
-import '../../../models/splendor_models.dart';
+import '../../../../api/splendor_api.dart';
+import '../../../../app/routes.dart';
+import '../../../../models/api_models.dart';
+import '../../../../models/splendor_models.dart';
 
 /// 璀璨宝石创建对局页控制器。
 ///

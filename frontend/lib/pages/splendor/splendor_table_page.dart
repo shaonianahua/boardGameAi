@@ -3,9 +3,10 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:get/get.dart';
 
 import '../../models/splendor_models.dart';
+import 'table/actions/card_actions_sheet.dart';
 import 'table/actions/legal_actions_panel.dart';
+import 'table/controller/splendor_table_controller.dart';
 import 'table/splendor_catalog_lookup.dart';
-import 'table/splendor_table_controller.dart';
 import 'table/widgets/splendor_market_card.dart';
 import 'table/widgets/splendor_noble_card.dart';
 import 'table/widgets/splendor_player_summary_card.dart';
@@ -71,6 +72,11 @@ class _SplendorTablePageState extends State<SplendorTablePage> {
           final response = controller.sessionResponse.value;
           final catalog = controller.catalog.value;
           final lookup = SplendorCatalogLookup(catalog);
+          final legalActions = controller.legalActions.value;
+          final actingPlayerIndex =
+              legalActions?.playerIndex ??
+              response?.state.currentPlayerIndex ??
+              0;
 
           return response == null
               ? const _EmptySessionView()
@@ -86,6 +92,7 @@ class _SplendorTablePageState extends State<SplendorTablePage> {
                       markets: response.state.markets,
                       cardsById: lookup.cardsById,
                       isLoadingCatalog: controller.isLoadingCatalog.value,
+                      onCardSelected: _showCardActions,
                     ),
                     SizedBox(height: 8.h),
                     SplendorTokenPoolCard(
@@ -105,10 +112,11 @@ class _SplendorTablePageState extends State<SplendorTablePage> {
                     SizedBox(height: 10.h),
                     _TurnPrompt(
                       turnIndex: response.state.currentTurnIndex,
-                      currentPlayerName: response
+                      currentPlayer: response
                           .state
-                          .players[response.state.currentPlayerIndex]
-                          .name,
+                          .players[response.state.currentPlayerIndex],
+                      pendingAction:
+                          controller.legalActions.value?.pendingAction,
                     ),
                     SizedBox(height: 8.h),
                     SplendorPlayerSummaryCard(
@@ -119,13 +127,26 @@ class _SplendorTablePageState extends State<SplendorTablePage> {
                     ),
                     SizedBox(height: 8.h),
                     LegalActionsPanel(
-                      legalActions: controller.legalActions.value,
+                      legalActions: legalActions,
+                      currentPlayer: response.state.players[actingPlayerIndex],
+                      isSubmitting: controller.isSubmittingAction.value,
                       isLoading: controller.isLoadingLegalActions.value,
+                      onSubmit: controller.submitLegalAction,
                     ),
                   ],
                 );
         }),
       ),
+    );
+  }
+
+  Future<void> _showCardActions(SplendorCard card) {
+    return CardActionsSheet.show(
+      context: context,
+      card: card,
+      actions: controller.legalActions.value?.actions ?? const [],
+      isSubmitting: controller.isSubmittingAction.value,
+      onSubmit: controller.submitLegalAction,
     );
   }
 }
@@ -220,21 +241,45 @@ class _CompactOpponentCard extends StatelessWidget {
 
 /// 当前回合提示。
 class _TurnPrompt extends StatelessWidget {
-  const _TurnPrompt({required this.turnIndex, required this.currentPlayerName});
+  const _TurnPrompt({
+    required this.turnIndex,
+    required this.currentPlayer,
+    required this.pendingAction,
+  });
 
   final int turnIndex;
-  final String currentPlayerName;
+  final SplendorPlayerState currentPlayer;
+  final SplendorPendingAction? pendingAction;
 
   @override
   Widget build(BuildContext context) {
     return Text(
-      '第 ${turnIndex + 1} 回合，$currentPlayerName 请选择一项行动',
+      _promptText,
       textAlign: TextAlign.center,
       style: Theme.of(context).textTheme.titleMedium?.copyWith(
         fontWeight: FontWeight.w800,
         color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.72),
       ),
     );
+  }
+
+  String get _promptText {
+    final pendingAction = this.pendingAction;
+    if (pendingAction == null) {
+      return '第 ${turnIndex + 1} 回合，${currentPlayer.name} 请选择一项行动';
+    }
+
+    if (pendingAction.type == SplendorActionType.discardTokens) {
+      final discardCount =
+          (pendingAction.tokenCount ?? 0) - (pendingAction.maxTokenCount ?? 0);
+      return '第 ${turnIndex + 1} 回合，${currentPlayer.name} 请先弃掉 $discardCount 个宝石';
+    }
+
+    if (pendingAction.type == SplendorActionType.chooseNoble) {
+      return '第 ${turnIndex + 1} 回合，${currentPlayer.name} 请先选择贵族';
+    }
+
+    return '第 ${turnIndex + 1} 回合，${currentPlayer.name} 请先处理待完成行动';
   }
 }
 

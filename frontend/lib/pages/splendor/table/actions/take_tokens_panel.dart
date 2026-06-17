@@ -3,6 +3,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import '../../../../models/splendor_models.dart';
 import '../splendor_card_style_helpers.dart';
+import '../widgets/splendor_selectable_gem_token.dart';
 
 /// 拿宝石行动面板。
 ///
@@ -58,17 +59,7 @@ class _TakeTokensPanelState extends State<TakeTokensPanel> {
 
   @override
   Widget build(BuildContext context) {
-    if (_takeTokenActions.isEmpty) {
-      return Text(
-        '当前没有可执行的拿宝石行动。',
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: Theme.of(
-            context,
-          ).colorScheme.onSurface.withValues(alpha: 0.62),
-        ),
-      );
-    }
-
+    final canTakeTokens = _takeTokenActions.isNotEmpty;
     final matchedAction = _matchedExactAction();
     final totalSelected = _selected.values.fold<int>(
       0,
@@ -83,47 +74,65 @@ class _TakeTokensPanelState extends State<TakeTokensPanel> {
           runSpacing: 10.h,
           children: [
             ..._gemKeys.map((colorKey) {
-              return _SelectableGemToken(
+              return SplendorSelectableGemToken(
                 colorKey: colorKey,
                 selectedCount: _selected[colorKey] ?? 0,
-                poolCount: _tokenCount(widget.tokenPool, colorKey),
-                enabled: !widget.isSubmitting,
-                canAdd: _canAdd(colorKey),
-                onTap: () => _toggleGem(colorKey),
+                count: _tokenCount(widget.tokenPool, colorKey),
+                enabled: canTakeTokens && !widget.isSubmitting,
+                canAdd: canTakeTokens && _canTapColor(colorKey),
+                onTap: canTakeTokens ? () => _toggleGem(colorKey) : null,
               );
             }),
-            _StaticGemToken(colorKey: 'gold', count: widget.tokenPool.gold),
+            SplendorSelectableGemToken(
+              colorKey: 'gold',
+              count: widget.tokenPool.gold,
+              enabled: false,
+            ),
           ],
         ),
-        SizedBox(height: 10.h),
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                totalSelected == 0 ? '点击宝石选择拿取' : '已选择：${_selectionLabel()}',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.onSurface.withValues(alpha: 0.66),
-                  fontWeight: FontWeight.w700,
+        if (!canTakeTokens) ...[
+          SizedBox(height: 10.h),
+          Text(
+            '当前不能拿宝石，公共宝石仅展示数量。',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.62),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+        if (canTakeTokens) ...[
+          SizedBox(height: 10.h),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  totalSelected == 0 ? '点击宝石选择拿取' : '已选择：${_selectionLabel()}',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.66),
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
-            ),
-            TextButton(
-              onPressed: widget.isSubmitting || totalSelected == 0
-                  ? null
-                  : _clearSelection,
-              child: const Text('清空'),
-            ),
-          ],
-        ),
-        SizedBox(height: 6.h),
-        FilledButton(
-          onPressed: widget.isSubmitting || matchedAction == null
-              ? null
-              : () => widget.onSubmit(matchedAction),
-          child: Text(widget.isSubmitting ? '提交中' : '拿取宝石'),
-        ),
+              TextButton(
+                onPressed: widget.isSubmitting || totalSelected == 0
+                    ? null
+                    : _clearSelection,
+                child: const Text('清空'),
+              ),
+            ],
+          ),
+          SizedBox(height: 6.h),
+          FilledButton(
+            onPressed: widget.isSubmitting || matchedAction == null
+                ? null
+                : () => widget.onSubmit(matchedAction),
+            child: Text(widget.isSubmitting ? '提交中' : '拿取宝石'),
+          ),
+        ],
       ],
     );
   }
@@ -133,17 +142,9 @@ class _TakeTokensPanelState extends State<TakeTokensPanel> {
       return;
     }
 
-    final current = _selected[colorKey] ?? 0;
-    final next = Map<String, int>.from(_selected);
-
-    if (current > 0 && !_canAdd(colorKey)) {
-      next[colorKey] = 0;
-    } else {
-      next[colorKey] = current + 1;
-    }
-
-    if (!_isSelectionPrefix(next)) {
-      next[colorKey] = 0;
+    final next = _nextSelectionAfterTap(colorKey);
+    if (next == null) {
+      return;
     }
 
     setState(() {
@@ -153,10 +154,48 @@ class _TakeTokensPanelState extends State<TakeTokensPanel> {
     });
   }
 
-  bool _canAdd(String colorKey) {
+  bool _canTapColor(String colorKey) {
+    return _nextSelectionAfterTap(colorKey) != null;
+  }
+
+  Map<String, int>? _nextSelectionAfterTap(String colorKey) {
     final current = _selected[colorKey] ?? 0;
-    final next = Map<String, int>.from(_selected)..[colorKey] = current + 1;
-    return _isSelectionPrefix(next);
+    final directNext = Map<String, int>.from(_selected)
+      ..[colorKey] = current + 1;
+
+    if (_isSelectionPrefix(directNext)) {
+      return directNext;
+    }
+
+    if (current > 0) {
+      final clearedNext = Map<String, int>.from(_selected)..[colorKey] = 0;
+      return _isSelectionPrefix(clearedNext) ? clearedNext : null;
+    }
+
+    return _compatibleSelectionContaining(colorKey);
+  }
+
+  Map<String, int>? _compatibleSelectionContaining(String colorKey) {
+    for (final legalAction in _takeTokenActions) {
+      final tokens = _tokensFromAction(legalAction.action);
+      if (_tokenCount(tokens, colorKey) == 0) {
+        continue;
+      }
+
+      final next = <String, int>{};
+      for (final gemKey in _gemKeys) {
+        next[gemKey] = (_selected[gemKey] ?? 0).clamp(
+          0,
+          _tokenCount(tokens, gemKey),
+        );
+      }
+      next[colorKey] = _tokenCount(tokens, colorKey);
+
+      if (_isSelectionPrefix(next)) {
+        return next;
+      }
+    }
+    return null;
   }
 
   bool _isSelectionPrefix(Map<String, int> selection) {
@@ -202,149 +241,6 @@ class _TakeTokensPanelState extends State<TakeTokensPanel> {
         _selected[colorKey] = 0;
       }
     });
-  }
-}
-
-/// 点击式圆形宝石。
-class _SelectableGemToken extends StatelessWidget {
-  const _SelectableGemToken({
-    required this.colorKey,
-    required this.selectedCount,
-    required this.poolCount,
-    required this.enabled,
-    required this.canAdd,
-    required this.onTap,
-  });
-
-  final String colorKey;
-  final int selectedCount;
-  final int poolCount;
-  final bool enabled;
-  final bool canAdd;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = gemColor(colorKey);
-    final textColor = readableTextColor(color);
-    final isDimmed = !enabled || (!canAdd && selectedCount == 0);
-
-    return InkWell(
-      borderRadius: BorderRadius.circular(999),
-      onTap: isDimmed ? null : onTap,
-      child: Opacity(
-        opacity: isDimmed ? 0.38 : 1,
-        child: SizedBox(
-          width: 50.w,
-          child: Column(
-            children: [
-              Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Container(
-                    width: 42.w,
-                    height: 42.w,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: color,
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: selectedCount > 0
-                            ? Theme.of(context).colorScheme.primary
-                            : Colors.black.withValues(alpha: 0.14),
-                        width: selectedCount > 0 ? 3 : 1,
-                      ),
-                    ),
-                    child: Text(
-                      '$poolCount',
-                      style: TextStyle(
-                        color: textColor,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ),
-                  if (selectedCount > 0)
-                    Positioned(
-                      right: -2.w,
-                      top: -4.h,
-                      child: Container(
-                        width: 20.w,
-                        height: 20.w,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.primary,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Text(
-                          '$selectedCount',
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.onPrimary,
-                            fontSize: 11.sp,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-              SizedBox(height: 4.h),
-              Text(
-                gemShortName(colorKey),
-                style: Theme.of(
-                  context,
-                ).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w800),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// 不参与普通拿宝石选择的公共宝石展示。
-class _StaticGemToken extends StatelessWidget {
-  const _StaticGemToken({required this.colorKey, required this.count});
-
-  final String colorKey;
-  final int count;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = gemColor(colorKey);
-    final textColor = readableTextColor(color);
-
-    return Opacity(
-      opacity: 0.72,
-      child: SizedBox(
-        width: 50.w,
-        child: Column(
-          children: [
-            Container(
-              width: 42.w,
-              height: 42.w,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: color,
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.black.withValues(alpha: 0.14)),
-              ),
-              child: Text(
-                '$count',
-                style: TextStyle(color: textColor, fontWeight: FontWeight.w900),
-              ),
-            ),
-            SizedBox(height: 4.h),
-            Text(
-              gemShortName(colorKey),
-              style: Theme.of(
-                context,
-              ).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w800),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }
 

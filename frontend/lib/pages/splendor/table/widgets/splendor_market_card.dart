@@ -12,6 +12,7 @@ class SplendorMarketCard extends StatelessWidget {
     required this.markets,
     required this.cardsById,
     required this.isLoadingCatalog,
+    required this.onCardSelected,
     super.key,
   });
 
@@ -23,6 +24,9 @@ class SplendorMarketCard extends StatelessWidget {
 
   /// catalog 是否正在加载。
   final bool isLoadingCatalog;
+
+  /// 用户点选一张市场发展卡后的回调，页面层负责决定买入或预留。
+  final ValueChanged<SplendorCard> onCardSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -36,18 +40,21 @@ class SplendorMarketCard extends StatelessWidget {
             title: '三级',
             cardIds: markets.level3,
             cardsById: cardsById,
+            onCardSelected: onCardSelected,
           ),
           SizedBox(height: 14.h),
           SplendorMarketSection(
             title: '二级',
             cardIds: markets.level2,
             cardsById: cardsById,
+            onCardSelected: onCardSelected,
           ),
           SizedBox(height: 14.h),
           SplendorMarketSection(
             title: '一级',
             cardIds: markets.level1,
             cardsById: cardsById,
+            onCardSelected: onCardSelected,
           ),
         ],
       ),

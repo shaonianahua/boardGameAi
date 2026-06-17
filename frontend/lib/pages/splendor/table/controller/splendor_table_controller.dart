@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
-import '../../../api/splendor_api.dart';
-import '../../../models/api_models.dart';
-import '../../../models/splendor_models.dart';
+import '../../../../api/splendor_api.dart';
+import '../../../../models/api_models.dart';
+import '../../../../models/splendor_models.dart';
 
 /// 璀璨宝石桌面页控制器。
 ///
@@ -92,7 +92,9 @@ class SplendorTableController extends GetxController {
     isLoadingLegalActions.value = true;
 
     try {
-      legalActions.value = await _splendorApi.getLegalActions(sessionId);
+      final response = await _splendorApi.getLegalActions(sessionId);
+      legalActions.value = response;
+      _logLegalActions(response);
     } on ApiException catch (error) {
       _showMessage(error.error.message);
     } catch (_) {
@@ -100,6 +102,22 @@ class SplendorTableController extends GetxController {
     } finally {
       isLoadingLegalActions.value = false;
     }
+  }
+
+  void _logLegalActions(SplendorLegalActionsResponse response) {
+    final state = sessionResponse.value?.state;
+    final takeTokenActions = response.actions
+        .where((item) => item.action.type == SplendorActionType.takeTokens)
+        .map((item) => item.action.payload)
+        .toList(growable: false);
+    debugPrint(
+      '[splendor legal-actions] '
+      'playerIndex=${response.playerIndex}, '
+      'pending=${response.pendingAction?.type.value}, '
+      'tokenPool=${_tokenSetLabel(state?.tokenPool)}, '
+      'playerTokens=${_tokenSetLabel(state?.players[response.playerIndex].tokens)}, '
+      'takeTokenActions=$takeTokenActions',
+    );
   }
 
   /// 提交一条后端返回的合法行动，并用返回的新状态刷新页面。
@@ -147,4 +165,11 @@ class SplendorTableController extends GetxController {
       duration: const Duration(seconds: 2),
     );
   }
+}
+
+String _tokenSetLabel(SplendorTokenSet? tokens) {
+  if (tokens == null) {
+    return 'null';
+  }
+  return '{white:${tokens.white}, blue:${tokens.blue}, green:${tokens.green}, red:${tokens.red}, black:${tokens.black}, gold:${tokens.gold}}';
 }

@@ -11,6 +11,7 @@ class SplendorMarketSection extends StatelessWidget {
     required this.title,
     required this.cardIds,
     required this.cardsById,
+    required this.onCardSelected,
     super.key,
   });
 
@@ -22,6 +23,9 @@ class SplendorMarketSection extends StatelessWidget {
 
   /// 发展卡索引。
   final Map<String, SplendorCard> cardsById;
+
+  /// 用户点选一张可展示的发展卡后的回调。
+  final ValueChanged<SplendorCard> onCardSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -42,11 +46,13 @@ class SplendorMarketSection extends StatelessWidget {
               spacing: 6.w,
               runSpacing: 6.h,
               children: cardIds.map((id) {
+                final card = cardsById[id];
                 return SizedBox(
                   width: tileWidth,
                   child: SplendorDevelopmentCardTile(
-                    card: cardsById[id],
+                    card: card,
                     fallbackId: id,
+                    onTap: card == null ? null : () => onCardSelected(card),
                   ),
                 );
               }).toList(),

@@ -49,16 +49,20 @@ frontend/lib/
 │   └── splendor/
 │       ├── splendor_table_page.dart
 │       ├── create_session/
+│       │   ├── controller/
+│       │   │   └── splendor_create_session_controller.dart
 │       │   ├── player_count_selector.dart
-│       │   ├── splendor_create_session_controller.dart
 │       │   └── splendor_create_session_page.dart
 │       └── table/
-│           ├── splendor_card_style_helpers.dart
-│           ├── splendor_catalog_lookup.dart
-│           ├── splendor_table_controller.dart
 │           ├── actions/
+│           │   ├── card_actions_sheet.dart
+│           │   ├── discard_tokens_panel.dart
 │           │   ├── legal_actions_panel.dart
 │           │   └── take_tokens_panel.dart
+│           ├── controller/
+│           │   └── splendor_table_controller.dart
+│           ├── splendor_card_style_helpers.dart
+│           ├── splendor_catalog_lookup.dart
 │           └── widgets/
 │               ├── splendor_cost_chip.dart
 │               ├── splendor_cost_wrap.dart
@@ -71,6 +75,7 @@ frontend/lib/
 │               ├── splendor_noble_tile.dart
 │               ├── splendor_player_summary_card.dart
 │               ├── splendor_players_card.dart
+│               ├── splendor_selectable_gem_token.dart
 │               ├── splendor_token_pool_card.dart
 │               └── splendor_turn_header.dart
 ├── services/
@@ -95,12 +100,26 @@ frontend/lib/
 
 `pages/splendor/`、`services/splendor/` 是后续璀璨宝石页面和本地业务编排实现位置。API 调用仍放在 `api/`，数据模型仍放在 `models/`。
 
+## 当前前端分层约定
+
+当前采用偏 MVVM 的简洁分层：
+
+- `Page/View`：只负责页面结构、用户交互入口和组合 widget，不直接拼接口地址，不写完整业务规则。
+- `Controller/ViewModel`：放在页面域的 `controller/` 子目录，负责页面状态、加载状态、接口编排、提交后的状态刷新和页面提示。
+- `Widget/Action Panel`：放在页面域的 `widgets/` 或 `actions/`，只做展示和局部交互；需要提交行动时向上回调。
+- `API`：统一放在 `frontend/lib/api/`，负责请求路径、请求发送和响应模型转换。
+- `Models`：统一放在 `frontend/lib/models/`，对齐后端接口和状态结构。
+- `Services/UseCase`：后续当规则、本地机器人、行动编排或跨页面流程变复杂时，再放到 `frontend/lib/services/`，避免 controller 变成规则大杂烩。
+
+当前阶段 controller 承担“页面状态 + 接口编排”是合理的；但购买规则、弃宝石规则、Bot 策略、AI 策略、本地状态推进等不应继续堆进 controller，出现明确复杂度后要抽到 `services/splendor/` 并补文档。
+
 架构约束：
 
 - API 调用文件统一放在 `frontend/lib/api/`。
 - 数据模型统一放在 `frontend/lib/models/`。
 - 不要创建 `pages/xxx/api`、`pages/xxx/models`、`services/xxx/models` 这类分散目录。
 - 如果某个 API/model 文件过大，优先在 `api/` 或 `models/` 下拆同级文件，而不是移动到模块目录。
+- 页面 controller 必须放在对应页面域的 `controller/` 子目录，不与页面 UI 文件平级。
 
 备注要求：
 
@@ -592,7 +611,7 @@ Get.toNamed(AppRoutes.splendorCreateSession);
 - 玩家类型当前默认 `SplendorPlayerType.human`，未明确 Bot 需求前不要添加额外字段。
 - 新增创建参数时，必须先确认后端接口和需求，再更新 `SplendorCreateSessionInput` 与本文档。
 
-### `frontend/lib/pages/splendor/create_session/splendor_create_session_controller.dart`
+### `frontend/lib/pages/splendor/create_session/controller/splendor_create_session_controller.dart`
 
 职责：
 
@@ -600,6 +619,7 @@ Get.toNamed(AppRoutes.splendorCreateSession);
 - 维护玩家人数、玩家名称输入框和提交状态。
 - 调用 `SplendorApi.createSession` 创建对局。
 - 创建成功后跳转到 `AppRoutes.splendorTable`。
+- 作为创建对局页的 ViewModel，不直接写页面 UI。
 
 核心类：
 
@@ -626,6 +646,7 @@ final controller = Get.put(SplendorCreateSessionController());
 
 - 表单状态优先放在 controller，不要再堆在页面 build 里。
 - 创建参数发生变化时，先确认后端接口，再改 controller。
+- 复杂业务流程不要继续堆在 controller；出现复用或规则编排需求时抽到 `services/`。
 
 ### `frontend/lib/pages/splendor/create_session/player_count_selector.dart`
 
@@ -664,6 +685,7 @@ PlayerCountSelector(
 - 使用紧凑棋盘式布局展示对手摘要、公共宝石池、市场卡牌详情、贵族详情、当前玩家和行动区。
 - 提供刷新按钮，通过 `SplendorApi.getSession` 重新拉取当前状态。
 - 当前玩家摘要固定展示玩家手里的各色宝石、分数、永久 bonus 和预留数量。
+- 负责打开市场发展卡行动面板，并把后端合法行动提交给控制器。
 
 核心类：
 
@@ -673,8 +695,12 @@ PlayerCountSelector(
 
 - `_OpponentStrip`：顶部对手摘要条。
 - `_CompactOpponentCard`：单个对手的紧凑摘要。
-- `_TurnPrompt`：当前回合提示。
+- `_TurnPrompt`：当前回合提示；如果存在 `pendingAction`，会提示先弃宝石或先选贵族，避免误认为已经进入下一位玩家普通行动。
 - `_EmptySessionView`：路由参数缺失时的空状态。
+
+核心方法：
+
+- `_showCardActions(SplendorCard card)`：打开被点选市场卡的购买/预留行动面板，面板只匹配后端返回的合法行动。
 
 用法：
 
@@ -690,13 +716,53 @@ Get.offNamed(AppRoutes.splendorTable, arguments: sessionResponse);
 - 本页不重新实现后端已有的规则判断，只做必要的 UI 禁用和提示。
 - 页面只拼接布局，接口请求和状态变更放在 `SplendorTableController`。
 
-### `frontend/lib/pages/splendor/table/splendor_table_controller.dart`
+### `frontend/lib/pages/splendor/table/actions/card_actions_sheet.dart`
+
+职责：
+
+- 市场发展卡购买/预留行动面板。
+- 展示被点选卡牌的等级、分数、奖励颜色和购买费用。
+- 根据后端合法行动匹配当前卡是否能执行 `buy_card` 或 `reserve_card`。
+- 提交时直接回传匹配到的 `SplendorLegalAction`，不在前端自行计算购买或预留规则。
+
+核心类：
+
+- `CardActionsSheet`
+
+核心方法：
+
+- `CardActionsSheet.show(...)`：打开 bottom sheet，传入卡牌、合法行动列表、提交状态和提交回调。
+
+匹配规则：
+
+- 购买市场卡：`action.type == buy_card`、`payload.source == market`、`payload.cardId == card.id`。
+- 预留市场卡：`action.type == reserve_card`、`payload.source == market`、`payload.cardId == card.id`。
+
+用法：
+
+```dart
+await CardActionsSheet.show(
+  context: context,
+  card: card,
+  actions: controller.legalActions.value?.actions ?? const [],
+  isSubmitting: controller.isSubmittingAction.value,
+  onSubmit: controller.submitLegalAction,
+);
+```
+
+维护规则：
+
+- 面板只做合法行动匹配，不推导费用、折扣、黄金支付或预留上限。
+- 如果后端新增牌堆预留、预留区购买等入口，应新增明确的 source 匹配分支，不要复用市场卡匹配逻辑。
+
+### `frontend/lib/pages/splendor/table/controller/splendor_table_controller.dart`
 
 职责：
 
 - 管理桌面页的对局状态、catalog 和合法行动。
 - 调用 `getCatalog`、`getSession`、`getLegalActions` 和 `submitAction`。
 - 维护刷新、加载和提交中的状态。
+- 作为桌面页的 ViewModel，负责页面状态和接口编排，不承载完整规则判断。
 
 核心类：
 
@@ -731,6 +797,7 @@ controller.initialize(sessionResponse);
 
 - 桌面页所有接口编排优先放到 controller，不要再写进页面 build。
 - `legalActions` 必须以后端为准，前端不自己推导合法性。
+- 弃宝石、选择贵族、Bot 决策或本地规则服务等复杂流程出现后，优先抽到 `services/splendor/`。
 
 ### `frontend/lib/pages/splendor/table/splendor_catalog_lookup.dart`
 
@@ -763,7 +830,7 @@ final lookup = SplendorCatalogLookup(controller.catalog.value);
 职责：
 
 - 桌面页的合法行动面板。
-- 这里只展示状态说明，不再承载拿宝石点击操作。
+- 展示当前行动状态，并在 `pendingAction: discard_tokens` 时承载弃宝石操作入口。
 
 核心类：
 
@@ -771,7 +838,38 @@ final lookup = SplendorCatalogLookup(controller.catalog.value);
 
 核心方法：
 
-- `build(BuildContext context)`：根据合法行动和加载状态展示行动面板。
+- `build(BuildContext context)`：根据合法行动、当前玩家和加载状态展示行动面板，必要时切换到 `DiscardTokensPanel`。
+
+### `frontend/lib/pages/splendor/table/actions/discard_tokens_panel.dart`
+
+职责：
+
+- 弃宝石行动面板。
+- 当后端返回 `pendingAction: discard_tokens` 时，允许用户点击圆形宝石选择要弃掉的数量。
+- 只匹配后端返回的合法弃宝石行动，不自行推导规则。
+
+核心类：
+
+- `DiscardTokensPanel`
+
+核心方法：
+
+- `build(BuildContext context)`：展示当前玩家宝石、选择状态和提交按钮。
+
+### `frontend/lib/pages/splendor/table/widgets/splendor_selectable_gem_token.dart`
+
+职责：
+
+- 可点击或静态展示的圆形宝石 token。
+- 拿宝石和弃宝石面板共用。
+
+核心类：
+
+- `SplendorSelectableGemToken`
+
+适合复用场景：
+
+- 任何需要展示“颜色圆点 + 数量 + 已选数量”的桌面宝石交互。
 
 ### `frontend/lib/pages/splendor/table/actions/take_tokens_panel.dart`
 
@@ -781,6 +879,9 @@ final lookup = SplendorCatalogLookup(controller.catalog.value);
 - 用户通过点击圆形宝石形成选择。
 - 用后端返回的合法 `take_tokens` 行动判断当前选择是否可提交。
 - 点击式拿宝石操作实际放在公共宝石池区域。
+- 公共宝石区不自行判断必须拿 3 个；当后端返回“只剩 1-2 种普通宝石可少拿”的合法行动时，面板按合法行动列表允许提交。
+- 当当前选择已经是另一个合法组合时，继续点击其他颜色会尝试切换到兼容的合法组合，例如 `黑2` 可以切换成 `红1黑1`。
+- 当当前没有合法拿宝石行动时，例如正在处理弃宝石 pendingAction，公共宝石区仍然展示公共池数量，只禁用拿取交互。
 
 核心类：
 
@@ -811,10 +912,15 @@ final lookup = SplendorCatalogLookup(controller.catalog.value);
 
 - 桌面页市场卡牌区域。
 - 把市场卡牌 ID 映射成真实卡面。
+- 向上抛出用户点选的发展卡，不直接处理购买或预留提交。
 
 核心类：
 
 - `SplendorMarketCard`
+
+核心参数：
+
+- `onCardSelected`：用户点选市场卡后的回调，通常由 `SplendorTablePage` 打开 `CardActionsSheet`。
 
 ### `frontend/lib/pages/splendor/table/widgets/splendor_noble_card.dart`
 
@@ -862,6 +968,7 @@ final lookup = SplendorCatalogLookup(controller.catalog.value);
 职责：
 
 - 桌面页单个等级的市场卡牌区域。
+- 把当前等级市场卡 ID 映射成 `SplendorDevelopmentCardTile`，并传递卡牌点击回调。
 
 核心类：
 
@@ -872,11 +979,16 @@ final lookup = SplendorCatalogLookup(controller.catalog.value);
 职责：
 
 - 桌面页发展卡简化卡面。
+- 支持可选点击回调，供市场卡选择后打开购买/预留面板。
 
 核心类：
 
 - `SplendorDevelopmentCardTile`
 - 固定高度发展卡卡面，避免因费用换行造成高度不一致。
+
+核心参数：
+
+- `onTap`：可选点击回调；为空时只展示卡面，不显示可交互边框。
 
 ### `frontend/lib/pages/splendor/table/widgets/splendor_noble_tile.dart`
 
@@ -1111,8 +1223,9 @@ final textTheme = Theme.of(context).textTheme;
 ### 网络
 
 - 网络请求统一走 `ApiClient`。
-- 业务接口编排优先放在 `pages/splendor/*_controller.dart`。
+- 业务接口编排优先放在对应页面域的 `controller/` 子目录。
 - 页面只负责展示，接口调用和状态推进交给 controller。
+- controller 不负责长期承载复杂规则；当同一流程被多个页面复用，或出现 Bot/AI/本地规则推进时，抽到 `services/`。
 
 ### 资源
 
@@ -1176,9 +1289,9 @@ final textTheme = Theme.of(context).textTheme;
 
 下一步建议按以下顺序增加文件，并同步更新本文档：
 
-1. 接入 `reserve_card` 预留卡交互。
-2. 接入 `buy_card` 购买卡交互。
-3. 处理 `pendingAction`：弃宝石和选择贵族。
+1. 处理 `pendingAction`：弃宝石和选择贵族。
+2. 展示当前玩家预留卡，并支持从预留区购买。
+3. 增加行动历史入口，方便回看每一步操作记录。
 4. 继续优化卡面排版，必要时再把卡牌/贵族 tile 抽成可复用组件。
 
 每一步都先保证职责清晰，不把规则逻辑写进页面。
