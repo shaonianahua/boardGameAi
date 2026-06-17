@@ -189,8 +189,8 @@ GET /api/splendor/sessions/:sessionId/actions
 - 折扣、扣宝石、回宝石池。
 - 购买后获得 bonus 和分数。
 - 购买市场卡后补牌。
-- 自动处理唯一满足的贵族。
-- 同时满足多个贵族时进入 `pendingAction: choose_noble`，等待玩家选择。
+- 玩家可选行动执行完毕，且必要弃宝石处理完毕后，自动判断是否满足场上贵族；一个回合最多获得 1 张贵族。
+- 同时满足多个贵族时，按当前场上贵族顺序自动获得第 1 张，获得后从场上移除；不满足条件则跳过且不产生提示。
 - 行动后超过 10 个 token 时进入 `pendingAction: discard_tokens`，等待玩家弃宝石；玩家回合开始时即使已有 10 个 token，也可以先拿宝石再弃到 10。
 - 15 分终局触发和胜负结算基础逻辑。
 - 行动后推进当前玩家。
@@ -198,7 +198,7 @@ GET /api/splendor/sessions/:sessionId/actions
 
 当前测试：
 
-- `src/features/splendor/__tests__/rules.test.ts` 覆盖初始合法行动、公共池只剩两色时拿两个不同色、10 个 token 开始拿宝石后弃牌、弃宝石 pending、多贵族 pending。
+- `src/features/splendor/__tests__/rules.test.ts` 覆盖初始合法行动、公共池只剩两色时拿两个不同色、10 个 token 开始拿宝石后弃牌、弃宝石 pending、多贵族自动获得。
 
 当前限制：
 

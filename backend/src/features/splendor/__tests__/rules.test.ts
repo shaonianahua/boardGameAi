@@ -209,7 +209,7 @@ test('allows taking tokens at ten held tokens before discarding back to ten', ()
   assert.equal(afterDiscard.currentPlayerIndex, 1);
 });
 
-test('enters choose noble pending action when multiple nobles are eligible', () => {
+test('automatically awards one noble at turn end when multiple nobles are eligible', () => {
   const state = createTwoPlayerState();
   const nobleState: SplendorGameState = {
     ...state,
@@ -244,20 +244,14 @@ test('enters choose noble pending action when multiple nobles are eligible', () 
     cardId: 'dev-1-033',
   });
 
-  assert.equal(afterBuy.pendingAction?.type, 'choose_noble');
-  assert.deepEqual(afterBuy.pendingAction?.nobleIds, ['noble-001', 'noble-002']);
-  assert.equal(afterBuy.currentPlayerIndex, 0);
+  assert.equal(afterBuy.pendingAction, null);
+  assert.equal(afterBuy.currentPlayerIndex, 1);
+  assert.deepEqual(afterBuy.players[0].nobles, ['noble-001']);
+  assert.equal(afterBuy.nobles.includes('noble-001'), false);
+  assert.equal(afterBuy.nobles.includes('noble-002'), true);
+  assert.equal(afterBuy.players[0].score, 3);
 
   const legalActions = generateSplendorLegalActions(afterBuy);
-  assert.equal(legalActions.actions.length, 2);
-  assert.ok(legalActions.actions.every((item) => item.action.type === 'choose_noble'));
-
-  const afterChoose = applySplendorAction(afterBuy, 0, {
-    type: 'choose_noble',
-    nobleId: 'noble-001',
-  });
-
-  assert.equal(afterChoose.pendingAction, null);
-  assert.equal(afterChoose.currentPlayerIndex, 1);
-  assert.equal(afterChoose.players[0].nobles.includes('noble-001'), true);
+  assert.equal(legalActions.pendingAction, null);
+  assert.ok(legalActions.actions.every((item) => item.action.type !== 'choose_noble'));
 });

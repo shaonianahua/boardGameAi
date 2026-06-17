@@ -3,6 +3,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import '../../../../models/splendor_models.dart';
 import 'splendor_gem_chip.dart';
+import 'splendor_player_assets_panel.dart';
 
 /// 玩家状态摘要卡。
 class SplendorPlayerSummaryCard extends StatelessWidget {
@@ -10,6 +11,7 @@ class SplendorPlayerSummaryCard extends StatelessWidget {
   const SplendorPlayerSummaryCard({
     required this.player,
     required this.isCurrent,
+    required this.cardsById,
     super.key,
   });
 
@@ -18,6 +20,9 @@ class SplendorPlayerSummaryCard extends StatelessWidget {
 
   /// 是否是当前行动玩家。
   final bool isCurrent;
+
+  /// 发展卡 catalog 索引，用于展示玩家已购卡牌提供的宝石和分数。
+  final Map<String, SplendorCard> cardsById;
 
   @override
   Widget build(BuildContext context) {
@@ -103,6 +108,8 @@ class SplendorPlayerSummaryCard extends StatelessWidget {
               color: colorScheme.onSurface.withValues(alpha: 0.66),
             ),
           ),
+          SizedBox(height: 10.h),
+          SplendorPlayerAssetsPanel(player: player, cardsById: cardsById),
         ],
       ),
     );

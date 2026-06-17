@@ -67,7 +67,7 @@ class SplendorPlayerState {
 
 /// 后端要求玩家先处理的挂起行动。
 ///
-/// 例如 token 超过 10 需要弃 token，或同时满足多个贵族时需要选择一个。
+/// 当前 V1 实际使用 `discard_tokens`；贵族会在回合收尾由后端自动结算。
 class SplendorPendingAction {
   /// 构造“弃 token”挂起行动。
   const SplendorPendingAction.discardTokens({
@@ -77,7 +77,7 @@ class SplendorPendingAction {
   }) : type = SplendorActionType.discardTokens,
        nobleIds = const [];
 
-  /// 构造“选择贵族”挂起行动。
+  /// 构造“选择贵族”挂起行动，当前仅保留对旧状态结构的兼容解析。
   const SplendorPendingAction.chooseNoble({
     required this.playerIndex,
     required this.nobleIds,
@@ -118,7 +118,7 @@ class SplendorPendingAction {
   /// 允许持有的 token 上限，仅弃 token 场景有值。
   final int? maxTokenCount;
 
-  /// 可选择的贵族 ID 列表，仅选择贵族场景有值。
+  /// 可选择的贵族 ID 列表；当前 V1 自动结算贵族时不会使用。
   final List<String> nobleIds;
 }
 

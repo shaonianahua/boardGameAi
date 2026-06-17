@@ -9,6 +9,7 @@ import 'table/controller/splendor_table_controller.dart';
 import 'table/splendor_catalog_lookup.dart';
 import 'table/widgets/splendor_market_card.dart';
 import 'table/widgets/splendor_noble_card.dart';
+import 'table/widgets/splendor_player_assets_panel.dart';
 import 'table/widgets/splendor_player_summary_card.dart';
 import 'table/widgets/splendor_token_pool_card.dart';
 
@@ -86,6 +87,7 @@ class _SplendorTablePageState extends State<SplendorTablePage> {
                     _OpponentStrip(
                       players: response.state.players,
                       currentPlayerIndex: response.state.currentPlayerIndex,
+                      cardsById: lookup.cardsById,
                     ),
                     SizedBox(height: 8.h),
                     SplendorMarketCard(
@@ -124,6 +126,7 @@ class _SplendorTablePageState extends State<SplendorTablePage> {
                           .state
                           .players[response.state.currentPlayerIndex],
                       isCurrent: true,
+                      cardsById: lookup.cardsById,
                     ),
                     SizedBox(height: 8.h),
                     LegalActionsPanel(
@@ -156,10 +159,12 @@ class _OpponentStrip extends StatelessWidget {
   const _OpponentStrip({
     required this.players,
     required this.currentPlayerIndex,
+    required this.cardsById,
   });
 
   final List<SplendorPlayerState> players;
   final int currentPlayerIndex;
+  final Map<String, SplendorCard> cardsById;
 
   @override
   Widget build(BuildContext context) {
@@ -176,7 +181,7 @@ class _OpponentStrip extends StatelessWidget {
         return Expanded(
           child: Padding(
             padding: EdgeInsets.symmetric(horizontal: 3.w),
-            child: _CompactOpponentCard(player: player),
+            child: _CompactOpponentCard(player: player, cardsById: cardsById),
           ),
         );
       }).toList(),
@@ -186,55 +191,121 @@ class _OpponentStrip extends StatelessWidget {
 
 /// 顶部紧凑对手卡。
 class _CompactOpponentCard extends StatelessWidget {
-  const _CompactOpponentCard({required this.player});
+  const _CompactOpponentCard({required this.player, required this.cardsById});
 
   final SplendorPlayerState player;
+  final Map<String, SplendorCard> cardsById;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return Container(
-      padding: EdgeInsets.all(8.w),
-      decoration: BoxDecoration(
-        color: colorScheme.secondary.withValues(alpha: 0.18),
+    return Material(
+      color: colorScheme.secondary.withValues(alpha: 0.18),
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: colorScheme.secondary.withValues(alpha: 0.2)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+        onTap: () => _showOpponentDetail(context),
+        child: Container(
+          padding: EdgeInsets.all(8.w),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: colorScheme.secondary.withValues(alpha: 0.2),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Text(
-                  player.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    fontWeight: FontWeight.w900,
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      player.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
                   ),
-                ),
+                  Icon(
+                    Icons.info_outline_rounded,
+                    size: 14.w,
+                    color: colorScheme.onSurface.withValues(alpha: 0.54),
+                  ),
+                  SizedBox(width: 4.w),
+                  Text(
+                    '${player.score}',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: colorScheme.error,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
               ),
+              SizedBox(height: 4.h),
               Text(
-                '${player.score}',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: colorScheme.error,
-                  fontWeight: FontWeight.w900,
+                'T${_tokenTotal(player.tokens)}/10  R${player.reservedCards.length}/3',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: colorScheme.onSurface.withValues(alpha: 0.66),
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ],
           ),
-          SizedBox(height: 4.h),
-          Text(
-            'T${_tokenTotal(player.tokens)}/10  R${player.reservedCards.length}/3',
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: colorScheme.onSurface.withValues(alpha: 0.66),
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
+        ),
       ),
+    );
+  }
+
+  void _showOpponentDetail(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+      ),
+      builder: (context) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.76,
+          minChildSize: 0.42,
+          maxChildSize: 0.92,
+          builder: (context, scrollController) {
+            return ListView(
+              controller: scrollController,
+              padding: EdgeInsets.fromLTRB(14.w, 12.h, 14.w, 20.h),
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        player.name,
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w900),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: '关闭',
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ],
+                ),
+                SizedBox(height: 6.h),
+                SplendorPlayerAssetsPanel(
+                  player: player,
+                  cardsById: cardsById,
+                  showTokens: true,
+                  showReservedCards: true,
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 }
@@ -273,10 +344,6 @@ class _TurnPrompt extends StatelessWidget {
       final discardCount =
           (pendingAction.tokenCount ?? 0) - (pendingAction.maxTokenCount ?? 0);
       return '第 ${turnIndex + 1} 回合，${currentPlayer.name} 请先弃掉 $discardCount 个宝石';
-    }
-
-    if (pendingAction.type == SplendorActionType.chooseNoble) {
-      return '第 ${turnIndex + 1} 回合，${currentPlayer.name} 请先选择贵族';
     }
 
     return '第 ${turnIndex + 1} 回合，${currentPlayer.name} 请先处理待完成行动';

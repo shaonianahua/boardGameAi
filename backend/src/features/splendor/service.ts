@@ -202,16 +202,5 @@ export async function getSplendorLegalActions(
   sessionId: string,
 ): Promise<SplendorLegalActionsResult> {
   const existing = await getSplendorSession(sessionId);
-  const result = generateSplendorLegalActions(existing.state);
-  const player = existing.state.players[result.playerIndex];
-  const takeTokenActions = result.actions.filter((item) => item.action.type === 'take_tokens');
-  console.info('[splendor legal-actions]', {
-    sessionId,
-    playerIndex: result.playerIndex,
-    tokenPool: existing.state.tokenPool,
-    playerTokens: player?.tokens,
-    pendingAction: result.pendingAction,
-    takeTokenActions: takeTokenActions.map((item) => item.action),
-  });
-  return result;
+  return generateSplendorLegalActions(existing.state);
 }

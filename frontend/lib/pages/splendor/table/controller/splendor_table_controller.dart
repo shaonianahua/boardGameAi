@@ -94,7 +94,6 @@ class SplendorTableController extends GetxController {
     try {
       final response = await _splendorApi.getLegalActions(sessionId);
       legalActions.value = response;
-      _logLegalActions(response);
     } on ApiException catch (error) {
       _showMessage(error.error.message);
     } catch (_) {
@@ -102,22 +101,6 @@ class SplendorTableController extends GetxController {
     } finally {
       isLoadingLegalActions.value = false;
     }
-  }
-
-  void _logLegalActions(SplendorLegalActionsResponse response) {
-    final state = sessionResponse.value?.state;
-    final takeTokenActions = response.actions
-        .where((item) => item.action.type == SplendorActionType.takeTokens)
-        .map((item) => item.action.payload)
-        .toList(growable: false);
-    debugPrint(
-      '[splendor legal-actions] '
-      'playerIndex=${response.playerIndex}, '
-      'pending=${response.pendingAction?.type.value}, '
-      'tokenPool=${_tokenSetLabel(state?.tokenPool)}, '
-      'playerTokens=${_tokenSetLabel(state?.players[response.playerIndex].tokens)}, '
-      'takeTokenActions=$takeTokenActions',
-    );
   }
 
   /// 提交一条后端返回的合法行动，并用返回的新状态刷新页面。
@@ -128,6 +111,7 @@ class SplendorTableController extends GetxController {
       _showMessage('当前行动数据不完整');
       return;
     }
+    final beforePlayer = session.state.players[playerIndex];
 
     isSubmittingAction.value = true;
 
@@ -144,6 +128,10 @@ class SplendorTableController extends GetxController {
         session: response.session,
         players: session.players,
         state: response.state,
+      );
+      _showAwardedNobleMessage(
+        playerBefore: beforePlayer,
+        playerAfter: response.state.players[playerIndex],
       );
       await loadLegalActions();
     } on ApiException catch (error) {
@@ -165,11 +153,37 @@ class SplendorTableController extends GetxController {
       duration: const Duration(seconds: 2),
     );
   }
-}
 
-String _tokenSetLabel(SplendorTokenSet? tokens) {
-  if (tokens == null) {
-    return 'null';
+  /// 对比行动提交前后的玩家贵族列表，提示本回合自动获得的贵族。
+  void _showAwardedNobleMessage({
+    required SplendorPlayerState playerBefore,
+    required SplendorPlayerState playerAfter,
+  }) {
+    final beforeNobleIds = playerBefore.nobles.toSet();
+    final awardedNobleIds = playerAfter.nobles
+        .where((nobleId) => !beforeNobleIds.contains(nobleId))
+        .toList(growable: false);
+    if (awardedNobleIds.isEmpty) {
+      return;
+    }
+
+    final noble = _nobleById(awardedNobleIds.first);
+    final nobleText = noble == null ? '贵族' : '${noble.prestige}分贵族';
+    _showMessage('${playerAfter.name} 获得了$nobleText');
   }
-  return '{white:${tokens.white}, blue:${tokens.blue}, green:${tokens.green}, red:${tokens.red}, black:${tokens.black}, gold:${tokens.gold}}';
+
+  /// 从已加载 catalog 中按 ID 查找贵族，用于提交行动后的提示文案。
+  SplendorNoble? _nobleById(String nobleId) {
+    final nobles = catalog.value?.nobles;
+    if (nobles == null) {
+      return null;
+    }
+
+    for (final noble in nobles) {
+      if (noble.id == nobleId) {
+        return noble;
+      }
+    }
+    return null;
+  }
 }

@@ -11,6 +11,7 @@ class SplendorPlayersCard extends StatelessWidget {
   const SplendorPlayersCard({
     required this.players,
     required this.currentPlayerIndex,
+    required this.cardsById,
     super.key,
   });
 
@@ -19,6 +20,9 @@ class SplendorPlayersCard extends StatelessWidget {
 
   /// 当前行动玩家下标。
   final int currentPlayerIndex;
+
+  /// 发展卡 catalog 索引，用于玩家摘要展示已购卡牌资产。
+  final Map<String, SplendorCard> cardsById;
 
   @override
   Widget build(BuildContext context) {
@@ -34,6 +38,7 @@ class SplendorPlayersCard extends StatelessWidget {
             child: SplendorPlayerSummaryCard(
               player: player,
               isCurrent: index == currentPlayerIndex,
+              cardsById: cardsById,
             ),
           );
         }),

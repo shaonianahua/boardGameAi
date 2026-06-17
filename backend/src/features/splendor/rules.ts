@@ -279,16 +279,9 @@ function resolveNobleVisits(state: SplendorGameState, player: SplendorPlayerStat
   if (eligible.length === 0) {
     return;
   }
-  if (eligible.length === 1) {
-    awardNoble(state, player, eligible[0]);
-    return;
-  }
 
-  state.pendingAction = {
-    type: 'choose_noble',
-    playerIndex: player.seatIndex,
-    nobleIds: eligible,
-  };
+  // Noble visits are resolved automatically at turn end; only one noble may visit per turn.
+  awardNoble(state, player, eligible[0]);
 }
 
 function setDiscardPendingIfNeeded(state: SplendorGameState, player: SplendorPlayerState): void {
@@ -334,6 +327,7 @@ function finishActionIfNoPending(state: SplendorGameState, player: SplendorPlaye
     return;
   }
 
+  resolveNobleVisits(state, player);
   updateFinalRound(state, player);
   if (state.status === 'active') {
     nextPlayer(state);
@@ -379,26 +373,6 @@ function applyDiscardTokens(
   state.pendingAction = null;
 }
 
-function applyChooseNoble(
-  state: SplendorGameState,
-  player: SplendorPlayerState,
-  nobleId: string,
-): void {
-  const pending = state.pendingAction;
-  if (!pending || pending.type !== 'choose_noble') {
-    throw new Error('no choose_noble action is pending');
-  }
-  if (pending.playerIndex !== player.seatIndex) {
-    throw new Error('pending choose_noble belongs to another player');
-  }
-  if (!pending.nobleIds.includes(nobleId)) {
-    throw new Error('noble is not eligible');
-  }
-
-  awardNoble(state, player, nobleId);
-  state.pendingAction = null;
-}
-
 export function applySplendorAction(
   inputState: SplendorGameState,
   playerIndex: number,
@@ -413,12 +387,6 @@ export function applySplendorAction(
     return state;
   }
 
-  if (action.type === 'choose_noble') {
-    applyChooseNoble(state, player, action.nobleId);
-    finishActionIfNoPending(state, player);
-    return state;
-  }
-
   assertNoPendingAction(state);
 
   if (action.type === 'take_tokens') {
@@ -429,7 +397,6 @@ export function applySplendorAction(
     setDiscardPendingIfNeeded(state, player);
   } else if (action.type === 'buy_card') {
     applyBuyCard(state, player, action);
-    resolveNobleVisits(state, player);
   } else {
     throw new Error('unsupported action type');
   }
@@ -637,16 +604,8 @@ export function generateSplendorLegalActions(
     };
   }
 
-  if (state.pendingAction?.type === 'choose_noble') {
-    for (const nobleId of state.pendingAction.nobleIds) {
-      actions.push({
-        action: {
-          type: 'choose_noble',
-          nobleId,
-        },
-        label: `Choose ${nobleId}`,
-      });
-    }
+  if (state.pendingAction) {
+    disabledReasons.push(`unsupported pending action: ${state.pendingAction.type}`);
     return {
       playerIndex,
       pendingAction: state.pendingAction,

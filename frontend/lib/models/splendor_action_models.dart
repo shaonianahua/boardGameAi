@@ -67,7 +67,9 @@ class SplendorAction {
     });
   }
 
-  /// 构造“选择贵族”行动，用于处理同时满足多个贵族的挂起状态。
+  /// 构造“选择贵族”行动。
+  ///
+  /// 当前 V1 规则已改为回合收尾自动获得贵族；这里仅保留对旧 action 结构的兼容解析入口。
   factory SplendorAction.chooseNoble(String nobleId) {
     return SplendorAction._(SplendorActionType.chooseNoble, {
       'type': SplendorActionType.chooseNoble.value,

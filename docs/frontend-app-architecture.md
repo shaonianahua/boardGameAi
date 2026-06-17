@@ -73,6 +73,7 @@ frontend/lib/
 │               ├── splendor_market_section.dart
 │               ├── splendor_noble_card.dart
 │               ├── splendor_noble_tile.dart
+│               ├── splendor_player_assets_panel.dart
 │               ├── splendor_player_summary_card.dart
 │               ├── splendor_players_card.dart
 │               ├── splendor_selectable_gem_token.dart
@@ -785,6 +786,8 @@ await CardActionsSheet.show(
 - `refreshSession()`：拉取当前对局快照。
 - `loadLegalActions()`：拉取当前合法行动。
 - `submitLegalAction(SplendorLegalAction legalAction)`：提交后端返回的合法行动。
+- `_showAwardedNobleMessage(...)`：提交行动后对比玩家前后贵族列表，如果本回合自动获得贵族，则显示底部提示。
+- `_nobleById(String nobleId)`：从已加载 catalog 中查找贵族，仅用于获得贵族提示文案。
 
 用法：
 
@@ -797,7 +800,8 @@ controller.initialize(sessionResponse);
 
 - 桌面页所有接口编排优先放到 controller，不要再写进页面 build。
 - `legalActions` 必须以后端为准，前端不自己推导合法性。
-- 弃宝石、选择贵族、Bot 决策或本地规则服务等复杂流程出现后，优先抽到 `services/splendor/`。
+- 贵族获得由后端在回合收尾自动结算；前端只根据提交行动前后的 `player.nobles` 差异提示结果，不提供手动选择贵族入口。
+- 弃宝石、Bot 决策或本地规则服务等复杂流程出现后，优先抽到 `services/splendor/`。
 
 ### `frontend/lib/pages/splendor/table/splendor_catalog_lookup.dart`
 
@@ -831,6 +835,7 @@ final lookup = SplendorCatalogLookup(controller.catalog.value);
 
 - 桌面页的合法行动面板。
 - 展示当前行动状态，并在 `pendingAction: discard_tokens` 时承载弃宝石操作入口。
+- 贵族卡不在这里处理；后端会在玩家可选行动和必要弃宝石完成后自动判断是否获得 1 张贵族。
 
 核心类：
 
@@ -938,6 +943,7 @@ final lookup = SplendorCatalogLookup(controller.catalog.value);
 职责：
 
 - 桌面页玩家摘要区域。
+- 通过 `cardsById` 向每个 `SplendorPlayerSummaryCard` 传递发展卡索引，保证玩家资产展示一致。
 
 核心类：
 
@@ -995,6 +1001,7 @@ final lookup = SplendorCatalogLookup(controller.catalog.value);
 职责：
 
 - 桌面页贵族简化卡面。
+- 只展示场上贵族的分数和需求；贵族获得由后端自动结算，不提供点击交互。
 
 核心类：
 
@@ -1005,11 +1012,33 @@ final lookup = SplendorCatalogLookup(controller.catalog.value);
 职责：
 
 - 桌面页单个玩家摘要。
+- 当前玩家会直接展示手里宝石、已购卡牌提供的永久宝石和卡牌分数汇总。
+- 通过 `cardsById` 把玩家已购卡牌 ID 映射成可读卡牌信息。
 
 核心类：
 
 - `SplendorPlayerSummaryCard`
 - 当前玩家摘要会固定展示各色宝石圆点，方便直接看手牌资源。
+
+### `frontend/lib/pages/splendor/table/widgets/splendor_player_assets_panel.dart`
+
+职责：
+
+- 玩家资产详情面板。
+- 当前玩家直接在摘要卡下方复用它展示已购卡牌提供的宝石和分数。
+- 其他玩家点击顶部玩家面板后，在弹窗内复用它展示分数、已购卡牌、预留卡牌和手里宝石。
+- 已购卡牌只展示提供颜色和分数，不展示购买费用；预留卡牌复用 `SplendorDevelopmentCardTile` 展示完整卡面。
+
+核心类：
+
+- `SplendorPlayerAssetsPanel`
+
+核心参数：
+
+- `player`：要展示的玩家状态。
+- `cardsById`：发展卡 catalog 索引。
+- `showTokens`：是否展示当前手里的 token，默认不展示。
+- `showReservedCards`：是否展示预留卡牌详情，默认不展示。
 
 ### `frontend/lib/pages/splendor/table/widgets/splendor_gem_chip.dart`
 
@@ -1289,9 +1318,8 @@ final textTheme = Theme.of(context).textTheme;
 
 下一步建议按以下顺序增加文件，并同步更新本文档：
 
-1. 处理 `pendingAction`：弃宝石和选择贵族。
-2. 展示当前玩家预留卡，并支持从预留区购买。
-3. 增加行动历史入口，方便回看每一步操作记录。
-4. 继续优化卡面排版，必要时再把卡牌/贵族 tile 抽成可复用组件。
+1. 展示当前玩家预留卡，并支持从预留区购买。
+2. 增加行动历史入口，方便回看每一步操作记录。
+3. 继续优化卡面排版，必要时再把卡牌/贵族 tile 抽成可复用组件。
 
 每一步都先保证职责清晰，不把规则逻辑写进页面。
