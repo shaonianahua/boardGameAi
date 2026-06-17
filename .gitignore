@@ -1,48 +1,38 @@
-# Miscellaneous
-*.class
-*.log
-*.pyc
-*.swp
+# Root
 .DS_Store
-.atom/
-.build/
-.buildlog/
-.history
-.svn/
-.swiftpm/
-migrate_working_dir/
 
-# IntelliJ related
-*.iml
-*.ipr
-*.iws
-.idea/
+# Frontend Flutter
+/frontend/.dart_tool/
+/frontend/.flutter-plugins-dependencies
+/frontend/build/
+/frontend/.pub/
+/frontend/.pub-cache/
+/frontend/.idea/
+/frontend/*.iml
+/frontend/android/.gradle/
+/frontend/android/app/debug/
+/frontend/android/app/profile/
+/frontend/android/app/release/
+/frontend/android/local.properties
+/frontend/ios/Flutter/ephemeral/
+/frontend/macos/Flutter/ephemeral/
+/frontend/linux/flutter/ephemeral/
+/frontend/windows/flutter/ephemeral/
 
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
+# FVM
+/.fvm/
+/frontend/.fvm/
 
-# Flutter/Dart/Pub related
-**/doc/api/
-**/ios/Flutter/.last_build_id
-.dart_tool/
-.flutter-plugins-dependencies
-.pub-cache/
-.pub/
-/build/
-/coverage/
+# Backend
+/backend/node_modules/
+/backend/dist/
+/backend/.env
+/backend/*.sqlite
+/backend/*.db
 
-# Symbolication related
-app.*.symbols
+# Data
+/data/*.sqlite
+/data/*.db
+/data/*.sqlite-journal
+/data/*.sqlite-wal
 
-# Obfuscation related
-app.*.map.json
-
-# Android Studio will place build artifacts here
-/android/app/debug
-/android/app/profile
-/android/app/release
-
-# FVM Version Cache
-.fvm/
