@@ -141,6 +141,7 @@ class SplendorTableController extends GetxController {
       _showMessage('当前行动数据不完整');
       return;
     }
+    final beforeState = session.state;
     final beforePlayer = session.state.players[playerIndex];
 
     isSubmittingAction.value = true;
@@ -159,9 +160,21 @@ class SplendorTableController extends GetxController {
         players: session.players,
         state: response.state,
       );
+      _showSubmittedActionMessage(
+        legalAction: legalAction,
+        playerName: beforePlayer.name,
+      );
       _showAwardedNobleMessage(
         playerBefore: beforePlayer,
         playerAfter: response.state.players[playerIndex],
+      );
+      _showFinalRoundMessage(
+        beforeState: beforeState,
+        afterState: response.state,
+      );
+      _showGameFinishedMessage(
+        beforeState: beforeState,
+        afterState: response.state,
       );
       await loadLegalActions();
       await loadActionHistory();
@@ -185,6 +198,27 @@ class SplendorTableController extends GetxController {
     );
   }
 
+  /// 根据提交行动类型显示轻量成功提示，不参与规则判断。
+  void _showSubmittedActionMessage({
+    required SplendorLegalAction legalAction,
+    required String playerName,
+  }) {
+    final action = legalAction.action;
+    final payload = action.payload;
+    final message = switch (action.type) {
+      SplendorActionType.takeTokens =>
+        '$playerName 拿取了${_tokenText(payload['tokens'])}',
+      SplendorActionType.reserveCard => '$playerName 预留了卡牌',
+      SplendorActionType.buyCard =>
+        '$playerName 购买了${_cardText(payload['cardId'] as String?)}',
+      SplendorActionType.discardTokens =>
+        '$playerName 弃掉了${_tokenText(payload['tokens'])}',
+      SplendorActionType.chooseNoble => '$playerName 选择了贵族',
+      SplendorActionType.nobleVisit => '$playerName 获得了贵族',
+    };
+    _showMessage(message);
+  }
+
   /// 对比行动提交前后的玩家贵族列表，提示本回合自动获得的贵族。
   void _showAwardedNobleMessage({
     required SplendorPlayerState playerBefore,
@@ -203,6 +237,40 @@ class SplendorTableController extends GetxController {
     _showMessage('${playerAfter.name} 获得了$nobleText');
   }
 
+  /// 对局首次触发终局轮时提示剩余玩家走完本轮后结算。
+  void _showFinalRoundMessage({
+    required SplendorGameState beforeState,
+    required SplendorGameState afterState,
+  }) {
+    if (beforeState.finalRound.triggered || !afterState.finalRound.triggered) {
+      return;
+    }
+
+    final triggeredBy = _playerName(
+      afterState,
+      afterState.finalRound.triggeredByPlayerIndex,
+    );
+    final roundEndPlayer = _playerName(
+      afterState,
+      afterState.finalRound.roundEndPlayerIndex,
+    );
+    _showMessage('$triggeredBy 达到 15 分，进入最后一轮，$roundEndPlayer 行动后结算');
+  }
+
+  /// 对局从进行中变成已结束时提示获胜玩家。
+  void _showGameFinishedMessage({
+    required SplendorGameState beforeState,
+    required SplendorGameState afterState,
+  }) {
+    if (beforeState.status == SplendorSessionStatus.finished ||
+        afterState.status != SplendorSessionStatus.finished) {
+      return;
+    }
+
+    final winnerName = _playerName(afterState, afterState.winnerPlayerIndex);
+    _showMessage('对局结束，$winnerName 获胜');
+  }
+
   /// 从已加载 catalog 中按 ID 查找贵族，用于提交行动后的提示文案。
   SplendorNoble? _nobleById(String nobleId) {
     final nobles = catalog.value?.nobles;
@@ -216,5 +284,60 @@ class SplendorTableController extends GetxController {
       }
     }
     return null;
+  }
+
+  String _playerName(SplendorGameState state, int? playerIndex) {
+    if (playerIndex == null ||
+        playerIndex < 0 ||
+        playerIndex >= state.players.length) {
+      return '玩家';
+    }
+    return state.players[playerIndex].name;
+  }
+
+  String _cardText(String? cardId) {
+    if (cardId == null) {
+      return '卡牌';
+    }
+
+    final cards = catalog.value?.cards;
+    if (cards == null) {
+      return '卡牌';
+    }
+
+    for (final card in cards) {
+      if (card.id == cardId) {
+        return '${_gemName(card.bonusColor)}色${card.prestige}分卡';
+      }
+    }
+    return '卡牌';
+  }
+
+  String _tokenText(Object? value) {
+    if (value is! Map<String, dynamic>) {
+      return '宝石';
+    }
+
+    final entries = <String>[];
+    for (final colorKey in ['white', 'blue', 'green', 'red', 'black', 'gold']) {
+      final count = value[colorKey];
+      if (count is int && count > 0) {
+        entries.add('${_gemName(colorKey)}$count');
+      }
+    }
+
+    return entries.isEmpty ? '宝石' : entries.join('、');
+  }
+
+  String _gemName(String colorKey) {
+    return switch (colorKey) {
+      'white' => '白',
+      'blue' => '蓝',
+      'green' => '绿',
+      'red' => '红',
+      'black' => '黑',
+      'gold' => '金',
+      _ => colorKey,
+    };
   }
 }

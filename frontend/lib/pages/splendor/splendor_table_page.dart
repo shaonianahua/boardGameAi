@@ -8,6 +8,7 @@ import 'table/actions/legal_actions_panel.dart';
 import 'table/controller/splendor_table_controller.dart';
 import 'table/splendor_catalog_lookup.dart';
 import 'table/widgets/splendor_action_history_panel.dart';
+import 'table/widgets/splendor_game_result_panel.dart';
 import 'table/widgets/splendor_market_card.dart';
 import 'table/widgets/splendor_noble_card.dart';
 import 'table/widgets/splendor_player_assets_panel.dart';
@@ -137,6 +138,10 @@ class _SplendorTablePageState extends State<SplendorTablePage> {
                           controller.legalActions.value?.pendingAction,
                     ),
                     SizedBox(height: 8.h),
+                    SplendorGameResultPanel(state: response.state),
+                    if (response.state.finalRound.triggered ||
+                        response.state.status == SplendorSessionStatus.finished)
+                      SizedBox(height: 8.h),
                     SplendorPlayerSummaryCard(
                       player: response
                           .state

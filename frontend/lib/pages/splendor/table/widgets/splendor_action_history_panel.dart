@@ -3,8 +3,6 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import '../../../../models/splendor_models.dart';
 import '../splendor_card_style_helpers.dart';
-import 'splendor_development_card_tile.dart';
-import 'splendor_noble_tile.dart';
 
 /// 璀璨宝石行动历史面板。
 ///
@@ -70,8 +68,6 @@ class SplendorActionHistoryPanel extends StatelessWidget {
           action: action,
           title: _titleFor(action),
           description: _descriptionFor(action),
-          cardsById: cardsById,
-          noblesById: noblesById,
         );
       },
     );
@@ -166,15 +162,11 @@ class _ActionHistoryTile extends StatelessWidget {
     required this.action,
     required this.title,
     required this.description,
-    required this.cardsById,
-    required this.noblesById,
   });
 
   final SplendorActionRecord action;
   final String title;
   final String description;
-  final Map<String, SplendorCard> cardsById;
-  final Map<String, SplendorNoble> noblesById;
 
   @override
   Widget build(BuildContext context) {
@@ -217,50 +209,8 @@ class _ActionHistoryTile extends StatelessWidget {
               fontWeight: FontWeight.w700,
             ),
           ),
-          if (_shouldShowCardPreview) ...[SizedBox(height: 8.h), _cardPreview],
-          if (_shouldShowNoblePreview) ...[
-            SizedBox(height: 8.h),
-            _noblePreview,
-          ],
         ],
       ),
-    );
-  }
-
-  bool get _shouldShowCardPreview {
-    return action.action.type == SplendorActionType.buyCard ||
-        action.action.type == SplendorActionType.reserveCard;
-  }
-
-  bool get _shouldShowNoblePreview {
-    return action.action.type == SplendorActionType.nobleVisit ||
-        action.action.type == SplendorActionType.chooseNoble;
-  }
-
-  Widget get _cardPreview {
-    final cardId = action.action.payload['cardId'] as String?;
-    if (cardId == null) {
-      return const SizedBox.shrink();
-    }
-
-    return SizedBox(
-      width: 104.w,
-      child: SplendorDevelopmentCardTile(
-        card: cardsById[cardId],
-        fallbackId: cardId,
-      ),
-    );
-  }
-
-  Widget get _noblePreview {
-    final nobleId = action.action.payload['nobleId'] as String?;
-    if (nobleId == null) {
-      return const SizedBox.shrink();
-    }
-
-    return SizedBox(
-      width: 126.w,
-      child: SplendorNobleTile(noble: noblesById[nobleId], fallbackId: nobleId),
     );
   }
 }

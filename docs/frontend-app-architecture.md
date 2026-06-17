@@ -68,6 +68,7 @@ frontend/lib/
 │               ├── splendor_cost_chip.dart
 │               ├── splendor_cost_wrap.dart
 │               ├── splendor_development_card_tile.dart
+│               ├── splendor_game_result_panel.dart
 │               ├── splendor_gem_chip.dart
 │               ├── splendor_info_card.dart
 │               ├── splendor_market_card.dart
@@ -1020,7 +1021,7 @@ final lookup = SplendorCatalogLookup(controller.catalog.value);
 
 - 桌面页行动历史面板。
 - 把后端 `GameAction` 记录转成中文文案，展示拿宝石、购买、预留、弃宝石和自动获得贵族事件。
-- 卡牌和贵族预览复用 `SplendorDevelopmentCardTile`、`SplendorNobleTile`。
+- 使用紧凑列表展示标题、描述和回合序号，避免游戏后期历史过长时难以扫读。
 
 核心类：
 
@@ -1034,6 +1035,22 @@ final lookup = SplendorCatalogLookup(controller.catalog.value);
 - `noblesById`：贵族 catalog 索引。
 - `isLoading`：行动历史加载状态。
 - `scrollController`：可选滚动控制器，bottom sheet 内传入以协调拖拽滚动。
+
+### `frontend/lib/pages/splendor/table/widgets/splendor_game_result_panel.dart`
+
+职责：
+
+- 桌面页终局状态和结果面板。
+- 终局轮触发后展示“最后一轮”提示，说明谁达到 15 分以及本轮结束座位。
+- 对局结束后展示获胜玩家和最终排行；排行规则与后端保持一致，先比分数，再比已购卡牌数量更少者优先。
+
+核心类：
+
+- `SplendorGameResultPanel`
+
+核心参数：
+
+- `state`：当前完整对局状态。
 
 ### `frontend/lib/pages/splendor/table/widgets/splendor_player_summary_card.dart`
 

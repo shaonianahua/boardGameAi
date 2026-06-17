@@ -198,13 +198,13 @@ GET /api/splendor/sessions/:sessionId/actions
 - 同时满足多个贵族时，按当前场上贵族顺序自动获得第 1 张，获得后从场上移除；不满足条件则跳过且不产生提示。
 - 自动获得贵族会写入行动历史，action type 为 `noble_visit`。
 - 行动后超过 10 个 token 时进入 `pendingAction: discard_tokens`，等待玩家弃宝石；玩家回合开始时即使已有 10 个 token，也可以先拿宝石再弃到 10。
-- 15 分终局触发和胜负结算基础逻辑。
+- 15 分终局触发和胜负结算：任意玩家回合结束达到 15 分后，本轮剩余座位继续行动，最后一名玩家行动结束后结算最高分。
 - 行动后推进当前玩家。
 - 查询当前合法行动。
 
 当前测试：
 
-- `src/features/splendor/__tests__/rules.test.ts` 覆盖初始合法行动、公共池只剩两色时拿两个不同色、10 个 token 开始拿宝石后弃牌、弃宝石 pending、多贵族自动获得和自动贵族历史事件识别。
+- `src/features/splendor/__tests__/rules.test.ts` 覆盖初始合法行动、公共池只剩两色时拿两个不同色、10 个 token 开始拿宝石后弃牌、弃宝石 pending、多贵族自动获得、自动贵族历史事件识别和终局轮结算。
 
 当前限制：
 

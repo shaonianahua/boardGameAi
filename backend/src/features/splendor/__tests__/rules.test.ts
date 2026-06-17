@@ -11,6 +11,12 @@ const createTwoPlayerState = (): SplendorGameState =>
     players: [{ name: 'A' }, { name: 'B' }],
   });
 
+const createFourPlayerState = (): SplendorGameState =>
+  createInitialSplendorState({
+    playerCount: 4,
+    players: [{ name: 'A' }, { name: 'B' }, { name: 'C' }, { name: 'D' }],
+  });
+
 test('generates legal actions for an active session', () => {
   const state = createTwoPlayerState();
   const result = generateSplendorLegalActions(state);
@@ -264,4 +270,48 @@ test('automatically awards one noble at turn end when multiple nobles are eligib
     type: 'noble_visit',
     nobleId: 'noble-001',
   });
+});
+
+test('finishes the game only after remaining players complete the final round', () => {
+  const state = createFourPlayerState();
+  const scoringState: SplendorGameState = {
+    ...state,
+    currentPlayerIndex: 1,
+    players: state.players.map((player, index) =>
+      index === 1
+        ? {
+            ...player,
+            score: 15,
+          }
+        : player,
+    ),
+  };
+
+  const afterPlayerTwo = applySplendorAction(scoringState, 1, {
+    type: 'take_tokens',
+    tokens: { white: 1, blue: 1, green: 1 },
+  });
+
+  assert.equal(afterPlayerTwo.finalRound.triggered, true);
+  assert.equal(afterPlayerTwo.finalRound.triggeredByPlayerIndex, 1);
+  assert.equal(afterPlayerTwo.finalRound.roundEndPlayerIndex, 3);
+  assert.equal(afterPlayerTwo.status, 'active');
+  assert.equal(afterPlayerTwo.currentPlayerIndex, 2);
+
+  const afterPlayerThree = applySplendorAction(afterPlayerTwo, 2, {
+    type: 'take_tokens',
+    tokens: { white: 1, blue: 1, green: 1 },
+  });
+
+  assert.equal(afterPlayerThree.status, 'active');
+  assert.equal(afterPlayerThree.currentPlayerIndex, 3);
+
+  const afterPlayerFour = applySplendorAction(afterPlayerThree, 3, {
+    type: 'take_tokens',
+    tokens: { white: 1, blue: 1, green: 1 },
+  });
+
+  assert.equal(afterPlayerFour.status, 'finished');
+  assert.equal(afterPlayerFour.winnerPlayerIndex, 1);
+  assert.equal(afterPlayerFour.currentPlayerIndex, 3);
 });
