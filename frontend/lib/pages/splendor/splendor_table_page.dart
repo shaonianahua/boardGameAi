@@ -143,6 +143,7 @@ class _SplendorTablePageState extends State<SplendorTablePage> {
                           .players[response.state.currentPlayerIndex],
                       isCurrent: true,
                       cardsById: lookup.cardsById,
+                      onReservedCardSelected: _showReservedCardActions,
                     ),
                     SizedBox(height: 8.h),
                     LegalActionsPanel(
@@ -163,6 +164,17 @@ class _SplendorTablePageState extends State<SplendorTablePage> {
     return CardActionsSheet.show(
       context: context,
       card: card,
+      actions: controller.legalActions.value?.actions ?? const [],
+      isSubmitting: controller.isSubmittingAction.value,
+      onSubmit: controller.submitLegalAction,
+    );
+  }
+
+  Future<void> _showReservedCardActions(SplendorCard card) {
+    return CardActionsSheet.show(
+      context: context,
+      card: card,
+      source: 'reserved',
       actions: controller.legalActions.value?.actions ?? const [],
       isSubmitting: controller.isSubmittingAction.value,
       onSubmit: controller.submitLegalAction,

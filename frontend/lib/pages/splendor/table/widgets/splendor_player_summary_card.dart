@@ -12,6 +12,7 @@ class SplendorPlayerSummaryCard extends StatelessWidget {
     required this.player,
     required this.isCurrent,
     required this.cardsById,
+    this.onReservedCardSelected,
     super.key,
   });
 
@@ -23,6 +24,9 @@ class SplendorPlayerSummaryCard extends StatelessWidget {
 
   /// 发展卡 catalog 索引，用于展示玩家已购卡牌提供的宝石和分数。
   final Map<String, SplendorCard> cardsById;
+
+  /// 当前玩家点击预留卡时触发，用于购买预留卡；为空时预留卡只展示。
+  final ValueChanged<SplendorCard>? onReservedCardSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -109,7 +113,12 @@ class SplendorPlayerSummaryCard extends StatelessWidget {
             ),
           ),
           SizedBox(height: 10.h),
-          SplendorPlayerAssetsPanel(player: player, cardsById: cardsById),
+          SplendorPlayerAssetsPanel(
+            player: player,
+            cardsById: cardsById,
+            showReservedCards: true,
+            onReservedCardSelected: onReservedCardSelected,
+          ),
         ],
       ),
     );

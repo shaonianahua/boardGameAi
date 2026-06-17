@@ -16,6 +16,7 @@ class SplendorPlayerAssetsPanel extends StatelessWidget {
     required this.cardsById,
     this.showTokens = false,
     this.showReservedCards = false,
+    this.onReservedCardSelected,
     super.key,
   });
 
@@ -30,6 +31,9 @@ class SplendorPlayerAssetsPanel extends StatelessWidget {
 
   /// 是否展示玩家预留卡详情。
   final bool showReservedCards;
+
+  /// 点击预留卡时触发；为空时预留卡只展示不可交互卡面。
+  final ValueChanged<SplendorCard>? onReservedCardSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -69,6 +73,7 @@ class SplendorPlayerAssetsPanel extends StatelessWidget {
           _ReservedCardsSection(
             cardIds: player.reservedCards,
             cardsById: cardsById,
+            onCardSelected: onReservedCardSelected,
           ),
         ],
         if (showTokens) ...[
@@ -135,7 +140,9 @@ class _BonusChip extends StatelessWidget {
   }
 }
 
-/// 已购发展卡列表，只展示卡牌提供颜色和分数。
+/// 已购分数卡列表。
+///
+/// 永久宝石数量已在上方五色汇总展示，这里只补充哪些已购卡提供分数。
 class _PurchasedCardSummary extends StatelessWidget {
   const _PurchasedCardSummary({required this.cardIds, required this.cardsById});
 
@@ -144,23 +151,30 @@ class _PurchasedCardSummary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (cardIds.isEmpty) {
-      return _EmptyText(text: '暂无已购买卡牌');
+    final scoreCards = cardIds
+        .where((cardId) {
+          final card = cardsById[cardId];
+          return card == null || card.prestige > 0;
+        })
+        .toList(growable: false);
+
+    if (scoreCards.isEmpty) {
+      return _EmptyText(text: '暂无分数卡');
     }
 
     return Wrap(
       spacing: 5.w,
       runSpacing: 5.h,
-      children: cardIds.map((cardId) {
-        return _OwnedCardChip(card: cardsById[cardId], fallbackId: cardId);
+      children: scoreCards.map((cardId) {
+        return _ScoreCardChip(card: cardsById[cardId], fallbackId: cardId);
       }).toList(),
     );
   }
 }
 
-/// 已购卡小标签，不展示费用等细节。
-class _OwnedCardChip extends StatelessWidget {
-  const _OwnedCardChip({required this.card, required this.fallbackId});
+/// 已购分数卡小标签，不重复展示卡牌颜色。
+class _ScoreCardChip extends StatelessWidget {
+  const _ScoreCardChip({required this.card, required this.fallbackId});
 
   final SplendorCard? card;
   final String fallbackId;
@@ -172,27 +186,23 @@ class _OwnedCardChip extends StatelessWidget {
       return _FallbackCardChip(label: fallbackId);
     }
 
-    final color = gemColor(card.bonusColor);
-    final textColor = readableTextColor(color);
-
     return Container(
       width: 46.w,
       height: 32.h,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: color,
+        color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.black.withValues(alpha: 0.14)),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.24),
+        ),
       ),
       child: Text(
-        card.prestige > 0
-            ? '${gemShortName(card.bonusColor)} ${card.prestige}'
-            : gemShortName(card.bonusColor),
+        '${card.prestige}分',
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          color: textColor,
-          fontSize: 12.sp,
+        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+          color: Theme.of(context).colorScheme.primary,
           fontWeight: FontWeight.w900,
         ),
       ),
@@ -228,10 +238,15 @@ class _FallbackCardChip extends StatelessWidget {
 
 /// 预留卡详情区域，用完整发展卡卡面展示方便识别购买费用。
 class _ReservedCardsSection extends StatelessWidget {
-  const _ReservedCardsSection({required this.cardIds, required this.cardsById});
+  const _ReservedCardsSection({
+    required this.cardIds,
+    required this.cardsById,
+    required this.onCardSelected,
+  });
 
   final List<String> cardIds;
   final Map<String, SplendorCard> cardsById;
+  final ValueChanged<SplendorCard>? onCardSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -251,9 +266,13 @@ class _ReservedCardsSection extends StatelessWidget {
               itemCount: cardIds.length,
               itemBuilder: (context, index) {
                 final cardId = cardIds[index];
+                final card = cardsById[cardId];
                 return SplendorDevelopmentCardTile(
-                  card: cardsById[cardId],
+                  card: card,
                   fallbackId: cardId,
+                  onTap: card == null || onCardSelected == null
+                      ? null
+                      : () => onCardSelected!(card),
                 );
               },
             ),

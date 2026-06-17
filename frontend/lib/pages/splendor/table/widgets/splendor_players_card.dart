@@ -12,6 +12,7 @@ class SplendorPlayersCard extends StatelessWidget {
     required this.players,
     required this.currentPlayerIndex,
     required this.cardsById,
+    this.onReservedCardSelected,
     super.key,
   });
 
@@ -23,6 +24,9 @@ class SplendorPlayersCard extends StatelessWidget {
 
   /// 发展卡 catalog 索引，用于玩家摘要展示已购卡牌资产。
   final Map<String, SplendorCard> cardsById;
+
+  /// 当前玩家点击预留卡时触发；非当前玩家不会传入该回调。
+  final ValueChanged<SplendorCard>? onReservedCardSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -39,6 +43,9 @@ class SplendorPlayersCard extends StatelessWidget {
               player: player,
               isCurrent: index == currentPlayerIndex,
               cardsById: cardsById,
+              onReservedCardSelected: index == currentPlayerIndex
+                  ? onReservedCardSelected
+                  : null,
             ),
           );
         }),

@@ -722,9 +722,9 @@ Get.offNamed(AppRoutes.splendorTable, arguments: sessionResponse);
 
 职责：
 
-- 市场发展卡购买/预留行动面板。
+- 发展卡购买/预留行动面板。
 - 展示被点选卡牌的等级、分数、奖励颜色和购买费用。
-- 根据后端合法行动匹配当前卡是否能执行 `buy_card` 或 `reserve_card`。
+- 根据 `source` 和后端合法行动匹配当前卡是否能执行 `buy_card` 或 `reserve_card`。
 - 提交时直接回传匹配到的 `SplendorLegalAction`，不在前端自行计算购买或预留规则。
 
 核心类：
@@ -739,6 +739,7 @@ Get.offNamed(AppRoutes.splendorTable, arguments: sessionResponse);
 
 - 购买市场卡：`action.type == buy_card`、`payload.source == market`、`payload.cardId == card.id`。
 - 预留市场卡：`action.type == reserve_card`、`payload.source == market`、`payload.cardId == card.id`。
+- 购买预留卡：`action.type == buy_card`、`payload.source == reserved`、`payload.cardId == card.id`。
 
 用法：
 
@@ -746,6 +747,7 @@ Get.offNamed(AppRoutes.splendorTable, arguments: sessionResponse);
 await CardActionsSheet.show(
   context: context,
   card: card,
+  source: 'reserved',
   actions: controller.legalActions.value?.actions ?? const [],
   isSubmitting: controller.isSubmittingAction.value,
   onSubmit: controller.submitLegalAction,
@@ -1038,7 +1040,8 @@ final lookup = SplendorCatalogLookup(controller.catalog.value);
 职责：
 
 - 桌面页单个玩家摘要。
-- 当前玩家会直接展示手里宝石、已购卡牌提供的永久宝石和卡牌分数汇总。
+- 当前玩家会直接展示手里宝石、五色永久宝石汇总和已购分数卡汇总。
+- 当前玩家会直接展示预留卡；传入 `onReservedCardSelected` 后可点击预留卡打开购买面板。
 - 通过 `cardsById` 把玩家已购卡牌 ID 映射成可读卡牌信息。
 
 核心类：
@@ -1051,9 +1054,9 @@ final lookup = SplendorCatalogLookup(controller.catalog.value);
 职责：
 
 - 玩家资产详情面板。
-- 当前玩家直接在摘要卡下方复用它展示已购卡牌提供的宝石和分数。
-- 其他玩家点击顶部玩家面板后，在弹窗内复用它展示分数、已购卡牌、预留卡牌和手里宝石。
-- 已购卡牌只展示提供颜色和分数，不展示购买费用；预留卡牌复用 `SplendorDevelopmentCardTile` 展示完整卡面。
+- 当前玩家直接在摘要卡下方复用它展示五色永久宝石汇总、已购分数卡和预留卡。
+- 其他玩家点击顶部玩家面板后，在弹窗内复用它展示分数、永久宝石汇总、已购分数卡、预留卡牌和手里宝石。
+- 永久宝石数量只在上方五色汇总展示；下方已购卡牌区域只展示分数卡，避免重复展示卡牌颜色。预留卡牌复用 `SplendorDevelopmentCardTile` 展示完整卡面，传入 `onReservedCardSelected` 时可点击。
 
 核心类：
 
@@ -1065,6 +1068,7 @@ final lookup = SplendorCatalogLookup(controller.catalog.value);
 - `cardsById`：发展卡 catalog 索引。
 - `showTokens`：是否展示当前手里的 token，默认不展示。
 - `showReservedCards`：是否展示预留卡牌详情，默认不展示。
+- `onReservedCardSelected`：点击预留卡回调；为空时预留卡只展示。
 
 ### `frontend/lib/pages/splendor/table/widgets/splendor_gem_chip.dart`
 
@@ -1344,7 +1348,6 @@ final textTheme = Theme.of(context).textTheme;
 
 下一步建议按以下顺序增加文件，并同步更新本文档：
 
-1. 展示当前玩家预留卡，并支持从预留区购买。
-2. 继续优化卡面排版，必要时再把卡牌/贵族 tile 抽成可复用组件。
+1. 继续优化卡面排版，必要时再把卡牌/贵族 tile 抽成可复用组件。
 
 每一步都先保证职责清晰，不把规则逻辑写进页面。

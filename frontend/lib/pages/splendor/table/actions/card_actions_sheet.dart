@@ -5,9 +5,10 @@ import '../../../../models/splendor_models.dart';
 import '../splendor_card_style_helpers.dart';
 import '../widgets/splendor_cost_wrap.dart';
 
-/// 市场发展卡行动面板。
+/// 发展卡行动面板。
 ///
 /// 根据后端返回的合法行动匹配当前卡牌可执行的购买或预留动作；前端不自行计算购买规则。
+/// `source` 用于区分公开市场卡和当前玩家预留卡。
 class CardActionsSheet extends StatefulWidget {
   /// 构造卡牌行动面板。
   const CardActionsSheet({
@@ -15,11 +16,15 @@ class CardActionsSheet extends StatefulWidget {
     required this.actions,
     required this.isSubmitting,
     required this.onSubmit,
+    this.source = 'market',
     super.key,
   });
 
-  /// 被用户点选的市场发展卡。
+  /// 被用户点选的发展卡。
   final SplendorCard card;
+
+  /// 卡牌来源，决定匹配市场卡还是预留卡行动。
+  final String source;
 
   /// 当前玩家全部合法行动，用于筛选当前卡的买入和预留动作。
   final List<SplendorLegalAction> actions;
@@ -30,13 +35,14 @@ class CardActionsSheet extends StatefulWidget {
   /// 提交匹配到的合法行动。
   final Future<void> Function(SplendorLegalAction action) onSubmit;
 
-  /// 打开市场发展卡行动面板。
+  /// 打开发展卡行动面板。
   static Future<void> show({
     required BuildContext context,
     required SplendorCard card,
     required List<SplendorLegalAction> actions,
     required bool isSubmitting,
     required Future<void> Function(SplendorLegalAction action) onSubmit,
+    String source = 'market',
   }) {
     return showModalBottomSheet<void>(
       context: context,
@@ -49,6 +55,7 @@ class CardActionsSheet extends StatefulWidget {
           actions: actions,
           isSubmitting: isSubmitting,
           onSubmit: onSubmit,
+          source: source,
         );
       },
     );
@@ -66,6 +73,9 @@ class _CardActionsSheetState extends State<CardActionsSheet> {
   }
 
   SplendorLegalAction? get _reserveAction {
+    if (widget.source != 'market') {
+      return null;
+    }
     return _firstMatchingAction(SplendorActionType.reserveCard);
   }
 
@@ -139,23 +149,25 @@ class _CardActionsSheetState extends State<CardActionsSheet> {
             SizedBox(height: 18.h),
             Row(
               children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: disabled || _reserveAction == null
-                        ? null
-                        : () => _submit(_reserveAction!),
-                    icon: const Icon(Icons.bookmark_add_outlined),
-                    label: Text(_reserveAction == null ? '不可预留' : '预留'),
+                if (widget.source == 'market') ...[
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: disabled || _reserveAction == null
+                          ? null
+                          : () => _submit(_reserveAction!),
+                      icon: const Icon(Icons.bookmark_add_outlined),
+                      label: Text(_reserveAction == null ? '不可预留' : '预留'),
+                    ),
                   ),
-                ),
-                SizedBox(width: 10.w),
+                  SizedBox(width: 10.w),
+                ],
                 Expanded(
                   child: FilledButton.icon(
                     onPressed: disabled || _buyAction == null
                         ? null
                         : () => _submit(_buyAction!),
                     icon: const Icon(Icons.shopping_bag_outlined),
-                    label: Text(_buyAction == null ? '不可购买' : '购买'),
+                    label: Text(_buyAction == null ? '宝石不足' : '购买'),
                   ),
                 ),
               ],
@@ -180,7 +192,7 @@ class _CardActionsSheetState extends State<CardActionsSheet> {
       final payload = item.action.payload;
       final isMatched =
           item.action.type == actionType &&
-          payload['source'] == 'market' &&
+          payload['source'] == widget.source &&
           payload['cardId'] == widget.card.id;
       if (isMatched) {
         return item;
