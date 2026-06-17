@@ -4,7 +4,7 @@
 
 ## 目标
 
-本项目后续会接入 DeepSeek API，让 AI 能在璀璨宝石对局中提供策略建议或接管 Bot 玩家。
+本项目 V2 开始接入 DeepSeek 等云端大模型，让 AI 能在璀璨宝石对局中提供策略建议；本地 Bot 仍使用启发式策略自动陪玩。V3 再考虑让大模型接管 Bot 玩家或承担复盘增强。
 
 AI 功能的边界：
 
@@ -40,6 +40,20 @@ Flutter
     -> 返回建议或执行 Bot 行动
 ```
 
+## V2 功能边界
+
+V2 同时做两条 AI 相关能力：
+
+- 本地 Bot：不调用大模型，只根据合法行动和评分函数自动选择行动，用于人机对局和模型失败兜底。
+- AI 建议：真人玩家点击按钮后调用大模型，返回推荐行动、理由、备选方案、对手威胁和风险提示。V2 第一版先建议不代操作，后续再加“采纳建议”。
+
+V2 的 AI 建议重点不是普通聊天框，而是“AI 读懂当前桌面并给出可执行策略”：
+
+- 前端使用底部策略面板或侧滑面板承载建议。
+- 模型返回可以先非流式，跑通后升级流式展示。
+- 流式展示建议按段落输出：结论、理由、对手威胁、备选方案、风险。
+- 前端后续可根据返回的行动或目标，对相关卡牌、宝石做轻量高亮。
+
 ## DeepSeek 计划配置
 
 后续 `.env` 建议增加：
@@ -60,6 +74,7 @@ DEEPSEEK_MODEL=deepseek-v4-flash
 - `gameState`：当前完整局面。
 - `catalog`：卡牌和贵族定义，可按需要裁剪为当前可见卡、预定卡、贵族。
 - `legalActions`：后端生成的合法行动列表，每个行动带 `actionId`。
+- `actionHistory`：近期行动历史，用于判断其他玩家可能目标；输入时应控制长度。
 - `currentPlayerIndex`：当前玩家。
 - `style`：AI 风格，例如 `balanced`、`aggressive`、`engine`、`noble`、`blocking`。
 
@@ -76,6 +91,16 @@ DEEPSEEK_MODEL=deepseek-v4-flash
   "risks": []
 }
 ```
+
+字段说明：
+
+- `actionId`：推荐行动 ID，必须能匹配 `legalActions`。
+- `confidence`：模型对推荐的信心，供前端显示强弱。
+- `summary`：顶部结论，适合在面板首屏直接展示。
+- `reasoning`：推荐理由，说明短期收益和后续路线。
+- `alternatives`：备选行动，避免用户只看到单一路线。
+- `threats`：其他玩家可能购买的卡、贵族进度或需要阻断的目标。
+- `risks`：当前推荐的风险，例如关键卡可能被抢、宝石上限压力。
 
 ## 后端需要新增的模块
 
@@ -121,7 +146,7 @@ POST /api/splendor/sessions/:sessionId/ai/decide
 `mode`：
 
 - `suggest`：只返回建议，不执行行动。
-- `execute`：AI 选择行动后，后端执行该行动并写入行动历史。
+- `execute`：AI 选择行动后，后端执行该行动并写入行动历史；V2 可以先不开放给真人建议，只用于后续 Bot 接管。
 
 返回：
 
@@ -141,6 +166,14 @@ POST /api/splendor/sessions/:sessionId/ai/decide
 }
 ```
 
+流式版本可以后续增加：
+
+```text
+POST /api/splendor/sessions/:sessionId/ai/stream
+```
+
+流式接口优先输出展示内容，最终再输出结构化 `decision`。如果 V2 第一版非流式已经满足演示，可以等 UI 稳定后再实现流式。
+
 ## 必须先补的能力
 
 接入 DeepSeek 前，后端还需要先实现：
@@ -150,6 +183,7 @@ POST /api/splendor/sessions/:sessionId/ai/decide
 - AI 输出 JSON 校验。
 - 本地启发式 fallback。
 - `AiDecision` 写库。
+- 前端 AI 建议面板和加载状态。
 
 否则模型没有稳定边界，容易输出非法操作。
 
@@ -163,4 +197,3 @@ POST /api/splendor/sessions/:sessionId/ai/decide
 - 模型输出必须结构化校验。
 - 模型失败时系统可回退。
 - token 成本可控，因为只传当前状态和候选行动，不传完整长文档。
-

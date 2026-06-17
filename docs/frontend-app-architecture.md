@@ -12,12 +12,14 @@
 
 ## 当前目标
 
-当前 App 阶段先实现璀璨宝石本地同屏对局。前端重点是：
+当前 App 已进入璀璨宝石 V2 规划阶段。V1 已完成本地同屏对局主流程，V2 前端重点是：
 
 - 页面展示和交互。
-- 本地游戏状态结构。
-- 规则服务和 Action 执行流程。
-- 后续接入后端存档、Bot 和 AI 策略时可复用同一套状态与行动结构。
+- 创建对局时支持真人 / Bot 座位。
+- Bot 回合自动推进，并展示“Bot 思考中”和行动结果。
+- 真人回合支持“AI 建议”入口。
+- AI 建议面板展示推荐行动、理由、备选行动、对手威胁和风险。
+- 后续流式输出和桌面元素高亮可以复用同一套建议模型。
 
 暂不在首页或 UI 组件里写复杂规则逻辑。页面负责展示和收集用户操作，规则判断和状态变更放到 `services/`。
 
@@ -65,6 +67,7 @@ frontend/lib/
 │           ├── splendor_catalog_lookup.dart
 │           └── widgets/
 │               ├── splendor_action_history_panel.dart
+│               ├── splendor_ai_advice_panel.dart
 │               ├── splendor_cost_chip.dart
 │               ├── splendor_cost_wrap.dart
 │               ├── splendor_development_card_tile.dart
@@ -101,7 +104,7 @@ frontend/lib/
 - `services/`：业务服务、规则服务、固定数据、状态推进逻辑。
 - `shared/`：确认跨页面或跨游戏复用的网络、widget 和工具。
 
-`pages/splendor/`、`services/splendor/` 是后续璀璨宝石页面和本地业务编排实现位置。API 调用仍放在 `api/`，数据模型仍放在 `models/`。
+`pages/splendor/`、`services/splendor/` 是后续璀璨宝石页面、Bot 自动推进和 AI 建议展示编排位置。API 调用仍放在 `api/`，数据模型仍放在 `models/`。
 
 ## 当前前端分层约定
 
@@ -112,7 +115,7 @@ frontend/lib/
 - `Widget/Action Panel`：放在页面域的 `widgets/` 或 `actions/`，只做展示和局部交互；需要提交行动时向上回调。
 - `API`：统一放在 `frontend/lib/api/`，负责请求路径、请求发送和响应模型转换。
 - `Models`：统一放在 `frontend/lib/models/`，对齐后端接口和状态结构。
-- `Services/UseCase`：后续当规则、本地机器人、行动编排或跨页面流程变复杂时，再放到 `frontend/lib/services/`，避免 controller 变成规则大杂烩。
+- `Services/UseCase`：当规则、本地机器人、AI 建议展示编排或跨页面流程变复杂时，放到 `frontend/lib/services/`，避免 controller 变成规则大杂烩。
 
 当前阶段 controller 承担“页面状态 + 接口编排”是合理的；但购买规则、弃宝石规则、Bot 策略、AI 策略、本地状态推进等不应继续堆进 controller，出现明确复杂度后要抽到 `services/splendor/` 并补文档。
 
@@ -183,6 +186,8 @@ final apiClient = ApiClient(baseUrl: ApiConfig.defaultBaseUrl);
 - `splendorSession(String sessionId)`：单局对局详情路径。
 - `splendorLegalActions(String sessionId)`：当前合法行动路径。
 - `splendorActions(String sessionId)`：提交行动和行动历史路径。
+- `splendorAiDecision(String sessionId)`：V2 AI 建议 / AI 执行路径，计划对应 `POST /api/splendor/sessions/:sessionId/ai/decide`。
+- `splendorAiStream(String sessionId)`：V2 后续流式建议路径，计划对应 `POST /api/splendor/sessions/:sessionId/ai/stream`。
 
 用法：
 
@@ -216,6 +221,8 @@ final path = ApiPaths.splendorActions(sessionId);
 - `getLegalActions(String sessionId)`：调用 `GET /api/splendor/sessions/:sessionId/legal-actions`。
 - `submitAction(String sessionId, SplendorSubmitActionInput input)`：调用 `POST /api/splendor/sessions/:sessionId/actions`。
 - `getActions(String sessionId)`：调用 `GET /api/splendor/sessions/:sessionId/actions`。
+- `requestAiAdvice(...)`：V2 计划新增，调用 AI 建议接口并返回结构化建议；只做请求和模型转换，不直接执行行动。
+- `requestAiAdviceStream(...)`：V2 后续计划新增，用于流式策略面板；第一版可以先不实现。
 
 用法：
 
@@ -230,6 +237,7 @@ final catalog = await splendorApi.getCatalog();
 - 接口路径统一从 `ApiPaths` 读取。
 - 璀璨宝石相关后端接口优先补到 `SplendorApi`。
 - 如果后端错误返回 `error.code/message`，由 API 层转换为 `ApiException`。
+- AI 建议接口也放在 `SplendorApi`，不要在页面里直接拼 AI 接口地址。
 
 ## 文件职责
 

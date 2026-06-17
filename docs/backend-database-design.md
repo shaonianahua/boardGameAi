@@ -464,13 +464,26 @@ GET /api/splendor/sessions/:sessionId/actions
 
 ### AI 建议或 AI 行动
 
-V1 可以暂不实现，V2/V3 使用：
+V1 可以暂不实现，V2 开始使用。V2 先支持真人玩家请求 AI 建议，V3 再扩展为大模型接管 Bot 或复盘分析：
 
 ```text
 POST /api/splendor/sessions/:sessionId/ai/decide
 ```
 
-返回 AI 选中的合法行动和解释。
+请求中的 `mode` 用于区分使用方式：
+
+- `suggest`：只返回推荐行动、解释、备选方案、对手威胁和风险提示，不执行行动。
+- `execute`：AI 选择行动后由后端再次校验并执行，写入行动历史；V2 可先不开放给真人建议。
+
+返回 AI 选中的合法行动和解释。若模型返回的 `actionId` 无法匹配合法行动，后端或前端不能执行该行动，只能展示解释或回退到本地启发式 Bot。
+
+后续如需要更出彩的展示效果，可增加流式建议接口：
+
+```text
+POST /api/splendor/sessions/:sessionId/ai/stream
+```
+
+流式接口用于前端策略面板逐段展示结论、理由、对手威胁和风险；最终仍要返回可校验的结构化 `decision`。
 
 ## Prisma 初步模型
 

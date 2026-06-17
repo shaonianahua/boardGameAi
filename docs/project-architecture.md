@@ -163,7 +163,7 @@ services/
 - 拍照识别。
 - 联网对战。
 
-## AI 玩家架构
+## Bot 与 AI 建议架构
 
 AI 玩家不应直接操作页面，也不应直接修改 `GameState`。AI 玩家和真人玩家一样，只能提交 `Action`。
 
@@ -178,7 +178,7 @@ GameState
   -> 生成新的 GameState
 ```
 
-### V2：本地启发式 AI
+### V2：本地 Bot
 
 本地 AI 只依赖规则引擎和评分函数：
 
@@ -199,6 +199,37 @@ selectedAction = pickBest(scoredActions)
 
 本地启发式 AI 不消耗 token，适合做默认 Bot。
 
+本地 Bot 的定位是“自动玩家”和“模型失败兜底”。它可以有简单策略评分，但不要直接写入 UI，也不要绕过合法行动校验。
+
+### V2：AI 策略建议
+
+AI 策略建议面向真人玩家，点击后读取当前结构化对局，返回推荐行动和解释。V2 中它先不默认代替玩家执行操作。
+
+```text
+GameState + catalog + legalActions + actionHistory
+  -> backend advisor-service
+  -> cloud LLM
+  -> structured advice
+  -> Flutter AI advice panel streaming display
+```
+
+建议输出需要包含：
+
+- `actionId`：推荐的合法行动 ID；如果没有足够信心可以为空。
+- `summary`：一句话推荐。
+- `reasoning`：为什么这么做，包括得分、折扣、贵族路线或节奏收益。
+- `alternatives`：备选行动。
+- `threats`：其他玩家可能想买的卡或即将达成的贵族。
+- `risks`：推荐行动的风险。
+- `highlightTargets`：后续可选，用于让前端高亮相关卡牌或宝石；是否加字段必须结合接口实现再确认。
+
+约束：
+
+- 大模型只能推荐后端提供的合法行动，不能自己编造行动。
+- 后端必须校验模型返回的 `actionId` 是否在合法行动列表中。
+- 如果模型返回非法行动，前端只能展示文字，不提供“采纳执行”。
+- V2 第一版可以先非流式返回完整建议；之后升级为流式输出。
+
 ### V3：LLM 增强 AI
 
 大模型只负责增强选择和解释：
@@ -214,6 +245,11 @@ GameState + TopN合法候选行动 + 简短策略上下文
 - 输出行动必须存在于合法行动列表。
 - 输出字段必须符合约定 schema。
 - 如果模型返回非法行动，回退到本地启发式 AI。
+
+V3 与 V2 AI 建议的区别：
+
+- V2：真人点击“AI 建议”，模型只建议，用户自己决定是否执行。
+- V3：模型可以接管 Bot 座位，后端校验后自动执行，并记录 AI 决策过程。
 
 ### 后端定位
 
