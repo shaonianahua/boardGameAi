@@ -64,6 +64,7 @@ frontend/lib/
 │           ├── splendor_card_style_helpers.dart
 │           ├── splendor_catalog_lookup.dart
 │           └── widgets/
+│               ├── splendor_action_history_panel.dart
 │               ├── splendor_cost_chip.dart
 │               ├── splendor_cost_wrap.dart
 │               ├── splendor_development_card_tile.dart
@@ -761,7 +762,7 @@ await CardActionsSheet.show(
 职责：
 
 - 管理桌面页的对局状态、catalog 和合法行动。
-- 调用 `getCatalog`、`getSession`、`getLegalActions` 和 `submitAction`。
+- 调用 `getCatalog`、`getSession`、`getLegalActions`、`getActions` 和 `submitAction`。
 - 维护刷新、加载和提交中的状态。
 - 作为桌面页的 ViewModel，负责页面状态和接口编排，不承载完整规则判断。
 
@@ -774,9 +775,11 @@ await CardActionsSheet.show(
 - `sessionResponse`：当前对局快照。
 - `catalog`：固定图鉴。
 - `legalActions`：当前合法行动。
+- `actionHistory`：当前对局行动历史记录。
 - `isRefreshing`：对局刷新状态。
 - `isLoadingCatalog`：图鉴加载状态。
 - `isLoadingLegalActions`：合法行动加载状态。
+- `isLoadingActionHistory`：行动历史加载状态。
 - `isSubmittingAction`：行动提交状态。
 
 核心方法：
@@ -785,6 +788,7 @@ await CardActionsSheet.show(
 - `loadCatalog()`：拉取 catalog。
 - `refreshSession()`：拉取当前对局快照。
 - `loadLegalActions()`：拉取当前合法行动。
+- `loadActionHistory()`：拉取当前对局行动历史。
 - `submitLegalAction(SplendorLegalAction legalAction)`：提交后端返回的合法行动。
 - `_showAwardedNobleMessage(...)`：提交行动后对比玩家前后贵族列表，如果本回合自动获得贵族，则显示底部提示。
 - `_nobleById(String nobleId)`：从已加载 catalog 中查找贵族，仅用于获得贵族提示文案。
@@ -800,6 +804,7 @@ controller.initialize(sessionResponse);
 
 - 桌面页所有接口编排优先放到 controller，不要再写进页面 build。
 - `legalActions` 必须以后端为准，前端不自己推导合法性。
+- 行动历史以后端 `game_actions` 为准；自动贵族事件由后端记录为 `noble_visit`，前端只负责翻译展示。
 - 贵族获得由后端在回合收尾自动结算；前端只根据提交行动前后的 `player.nobles` 差异提示结果，不提供手动选择贵族入口。
 - 弃宝石、Bot 决策或本地规则服务等复杂流程出现后，优先抽到 `services/splendor/`。
 
@@ -1006,6 +1011,27 @@ final lookup = SplendorCatalogLookup(controller.catalog.value);
 核心类：
 
 - `SplendorNobleTile`
+
+### `frontend/lib/pages/splendor/table/widgets/splendor_action_history_panel.dart`
+
+职责：
+
+- 桌面页行动历史面板。
+- 把后端 `GameAction` 记录转成中文文案，展示拿宝石、购买、预留、弃宝石和自动获得贵族事件。
+- 卡牌和贵族预览复用 `SplendorDevelopmentCardTile`、`SplendorNobleTile`。
+
+核心类：
+
+- `SplendorActionHistoryPanel`
+
+核心参数：
+
+- `actions`：后端返回的历史行动记录。
+- `players`：当前玩家列表，用于把 `playerIndex` 转成玩家名。
+- `cardsById`：发展卡 catalog 索引。
+- `noblesById`：贵族 catalog 索引。
+- `isLoading`：行动历史加载状态。
+- `scrollController`：可选滚动控制器，bottom sheet 内传入以协调拖拽滚动。
 
 ### `frontend/lib/pages/splendor/table/widgets/splendor_player_summary_card.dart`
 
@@ -1319,7 +1345,6 @@ final textTheme = Theme.of(context).textTheme;
 下一步建议按以下顺序增加文件，并同步更新本文档：
 
 1. 展示当前玩家预留卡，并支持从预留区购买。
-2. 增加行动历史入口，方便回看每一步操作记录。
-3. 继续优化卡面排版，必要时再把卡牌/贵族 tile 抽成可复用组件。
+2. 继续优化卡面排版，必要时再把卡牌/贵族 tile 抽成可复用组件。
 
 每一步都先保证职责清晰，不把规则逻辑写进页面。

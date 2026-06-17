@@ -173,6 +173,11 @@ GET /api/splendor/sessions/:sessionId/actions
 - `stateBefore`
 - `stateAfter`
 
+说明：
+
+- 玩家提交行动会记录为 `human` / `bot` / `llm` 等 actorType。
+- 自动获得贵族会追加 `actorType: system`、`action.type: noble_visit` 的系统行动记录，方便前端和后续 AI 回看完整过程。
+
 ## 当前规则能力
 
 已实现：
@@ -191,6 +196,7 @@ GET /api/splendor/sessions/:sessionId/actions
 - 购买市场卡后补牌。
 - 玩家可选行动执行完毕，且必要弃宝石处理完毕后，自动判断是否满足场上贵族；一个回合最多获得 1 张贵族。
 - 同时满足多个贵族时，按当前场上贵族顺序自动获得第 1 张，获得后从场上移除；不满足条件则跳过且不产生提示。
+- 自动获得贵族会写入行动历史，action type 为 `noble_visit`。
 - 行动后超过 10 个 token 时进入 `pendingAction: discard_tokens`，等待玩家弃宝石；玩家回合开始时即使已有 10 个 token，也可以先拿宝石再弃到 10。
 - 15 分终局触发和胜负结算基础逻辑。
 - 行动后推进当前玩家。
@@ -198,7 +204,7 @@ GET /api/splendor/sessions/:sessionId/actions
 
 当前测试：
 
-- `src/features/splendor/__tests__/rules.test.ts` 覆盖初始合法行动、公共池只剩两色时拿两个不同色、10 个 token 开始拿宝石后弃牌、弃宝石 pending、多贵族自动获得。
+- `src/features/splendor/__tests__/rules.test.ts` 覆盖初始合法行动、公共池只剩两色时拿两个不同色、10 个 token 开始拿宝石后弃牌、弃宝石 pending、多贵族自动获得和自动贵族历史事件识别。
 
 当前限制：
 

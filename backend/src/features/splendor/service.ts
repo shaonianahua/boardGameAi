@@ -4,6 +4,7 @@ import { actionType, applySplendorAction, generateSplendorLegalActions } from '.
 import { createInitialSplendorState, parseState, stringifyState } from './state.js';
 import type {
   CreateSplendorSessionInput,
+  SplendorAction,
   SplendorGameState,
   SplendorLegalActionsResult,
   SubmitSplendorActionInput,
@@ -47,6 +48,14 @@ type GameSessionWithPlayers = Prisma.GameSessionGetPayload<{
     players: true;
   };
 }>;
+
+interface AutomaticActionRecordInput {
+  playerIndex: number;
+  actorType: string;
+  action: SplendorAction;
+  stateBefore: SplendorGameState;
+  stateAfter: SplendorGameState;
+}
 
 function safeJson(value: unknown): string {
   return JSON.stringify(value);
@@ -92,6 +101,29 @@ function publicSessionResponse(
     players: session.players,
     state,
   };
+}
+
+export function automaticSplendorActions(
+  beforeState: SplendorGameState,
+  afterState: SplendorGameState,
+): AutomaticActionRecordInput[] {
+  return afterState.players.flatMap((afterPlayer) => {
+    const beforePlayer = beforeState.players[afterPlayer.seatIndex];
+    if (!beforePlayer) {
+      return [];
+    }
+
+    const beforeNobleIds = new Set(beforePlayer.nobles);
+    return afterPlayer.nobles
+      .filter((nobleId) => !beforeNobleIds.has(nobleId))
+      .map((nobleId) => ({
+        playerIndex: afterPlayer.seatIndex,
+        actorType: 'system',
+        action: { type: 'noble_visit', nobleId },
+        stateBefore: beforeState,
+        stateAfter: afterState,
+      }));
+  });
 }
 
 export async function createSplendorSession(
@@ -153,6 +185,7 @@ export async function submitSplendorAction(
   const beforeState = existing.state;
   const afterState = applySplendorAction(beforeState, input.playerIndex, input.action);
   const actorType = input.actorType ?? existing.players[input.playerIndex]?.playerType ?? 'human';
+  const automaticActions = automaticSplendorActions(beforeState, afterState);
 
   const [actionRecord, session] = await prisma.$transaction(async (tx) => {
     const createdAction = await tx.gameAction.create({
@@ -167,6 +200,21 @@ export async function submitSplendorAction(
         stateAfterJson: stringifyState(afterState),
       },
     });
+
+    if (automaticActions.length > 0) {
+      await tx.gameAction.createMany({
+        data: automaticActions.map((automaticAction) => ({
+          sessionId,
+          turnIndex: beforeState.currentTurnIndex,
+          playerIndex: automaticAction.playerIndex,
+          actorType: automaticAction.actorType,
+          actionType: actionType(automaticAction.action),
+          actionJson: safeJson(automaticAction.action),
+          stateBeforeJson: stringifyState(automaticAction.stateBefore),
+          stateAfterJson: stringifyState(automaticAction.stateAfter),
+        })),
+      });
+    }
 
     const updatedSession = await tx.gameSession.update({
       where: { id: sessionId },

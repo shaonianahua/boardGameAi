@@ -7,6 +7,7 @@ import 'table/actions/card_actions_sheet.dart';
 import 'table/actions/legal_actions_panel.dart';
 import 'table/controller/splendor_table_controller.dart';
 import 'table/splendor_catalog_lookup.dart';
+import 'table/widgets/splendor_action_history_panel.dart';
 import 'table/widgets/splendor_market_card.dart';
 import 'table/widgets/splendor_noble_card.dart';
 import 'table/widgets/splendor_player_assets_panel.dart';
@@ -51,6 +52,21 @@ class _SplendorTablePageState extends State<SplendorTablePage> {
         title: const Text('璀璨宝石'),
         toolbarHeight: 44.h,
         actions: [
+          Obx(
+            () => IconButton(
+              tooltip: '行动历史',
+              onPressed: controller.sessionResponse.value == null
+                  ? null
+                  : _showActionHistorySheet,
+              icon: controller.isLoadingActionHistory.value
+                  ? SizedBox(
+                      width: 18.w,
+                      height: 18.w,
+                      child: const CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.history_rounded),
+            ),
+          ),
           Obx(
             () => IconButton(
               tooltip: '刷新对局',
@@ -150,6 +166,79 @@ class _SplendorTablePageState extends State<SplendorTablePage> {
       actions: controller.legalActions.value?.actions ?? const [],
       isSubmitting: controller.isSubmittingAction.value,
       onSubmit: controller.submitLegalAction,
+    );
+  }
+
+  Future<void> _showActionHistorySheet() async {
+    await controller.loadActionHistory();
+    if (!mounted) {
+      return;
+    }
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+      ),
+      builder: (context) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.74,
+          minChildSize: 0.42,
+          maxChildSize: 0.92,
+          builder: (context, scrollController) {
+            return Obx(() {
+              final response = controller.sessionResponse.value;
+              final lookup = SplendorCatalogLookup(controller.catalog.value);
+
+              return Column(
+                children: [
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(14.w, 10.h, 8.w, 4.h),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '行动历史',
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w900),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: '刷新历史',
+                          onPressed: controller.isLoadingActionHistory.value
+                              ? null
+                              : controller.loadActionHistory,
+                          icon: const Icon(Icons.refresh_rounded),
+                        ),
+                        IconButton(
+                          tooltip: '关闭',
+                          onPressed: () => Navigator.of(context).pop(),
+                          icon: const Icon(Icons.close_rounded),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: response == null
+                        ? const Center(child: Text('没有找到当前对局。'))
+                        : SplendorActionHistoryPanel(
+                            actions: controller.actionHistory,
+                            players: response.state.players,
+                            cardsById: lookup.cardsById,
+                            noblesById: lookup.noblesById,
+                            isLoading: controller.isLoadingActionHistory.value,
+                            scrollController: scrollController,
+                          ),
+                  ),
+                ],
+              );
+            });
+          },
+        );
+      },
     );
   }
 }

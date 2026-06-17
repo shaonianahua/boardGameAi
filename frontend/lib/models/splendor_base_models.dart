@@ -45,7 +45,8 @@ enum SplendorActionType {
   reserveCard('reserve_card'),
   buyCard('buy_card'),
   discardTokens('discard_tokens'),
-  chooseNoble('choose_noble');
+  chooseNoble('choose_noble'),
+  nobleVisit('noble_visit');
 
   const SplendorActionType(this.value);
 
@@ -59,6 +60,7 @@ enum SplendorActionType {
       'buy_card' => SplendorActionType.buyCard,
       'discard_tokens' => SplendorActionType.discardTokens,
       'choose_noble' => SplendorActionType.chooseNoble,
+      'noble_visit' => SplendorActionType.nobleVisit,
       _ => SplendorActionType.takeTokens,
     };
   }

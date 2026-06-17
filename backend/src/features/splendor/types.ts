@@ -110,6 +110,10 @@ export type SplendorAction =
   | {
       type: 'choose_noble';
       nobleId: string;
+    }
+  | {
+      type: 'noble_visit';
+      nobleId: string;
     };
 
 export interface SubmitSplendorActionInput {

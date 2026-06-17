@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { applySplendorAction, generateSplendorLegalActions } from '../rules.js';
+import { automaticSplendorActions } from '../service.js';
 import { createInitialSplendorState } from '../state.js';
 import type { SplendorGameState } from '../types.js';
 
@@ -254,4 +255,13 @@ test('automatically awards one noble at turn end when multiple nobles are eligib
   const legalActions = generateSplendorLegalActions(afterBuy);
   assert.equal(legalActions.pendingAction, null);
   assert.ok(legalActions.actions.every((item) => item.action.type !== 'choose_noble'));
+
+  const automaticActions = automaticSplendorActions(nobleState, afterBuy);
+  assert.equal(automaticActions.length, 1);
+  assert.equal(automaticActions[0].playerIndex, 0);
+  assert.equal(automaticActions[0].actorType, 'system');
+  assert.deepEqual(automaticActions[0].action, {
+    type: 'noble_visit',
+    nobleId: 'noble-001',
+  });
 });

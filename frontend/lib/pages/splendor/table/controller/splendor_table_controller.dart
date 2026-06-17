@@ -26,6 +26,10 @@ class SplendorTableController extends GetxController {
   final Rxn<SplendorLegalActionsResponse> legalActions =
       Rxn<SplendorLegalActionsResponse>();
 
+  /// 当前对局的行动历史记录。
+  final RxList<SplendorActionRecord> actionHistory =
+      <SplendorActionRecord>[].obs;
+
   /// 对局刷新中状态。
   final RxBool isRefreshing = false.obs;
 
@@ -35,6 +39,9 @@ class SplendorTableController extends GetxController {
   /// 合法行动加载中状态。
   final RxBool isLoadingLegalActions = false.obs;
 
+  /// 行动历史加载中状态。
+  final RxBool isLoadingActionHistory = false.obs;
+
   /// 行动提交中状态。
   final RxBool isSubmittingAction = false.obs;
 
@@ -43,6 +50,7 @@ class SplendorTableController extends GetxController {
     sessionResponse.value = initialSessionResponse;
     loadCatalog();
     loadLegalActions();
+    loadActionHistory();
   }
 
   /// 重新拉取 catalog，用于展示真实卡面信息。
@@ -73,6 +81,7 @@ class SplendorTableController extends GetxController {
     try {
       sessionResponse.value = await _splendorApi.getSession(sessionId);
       await loadLegalActions();
+      await loadActionHistory();
     } on ApiException catch (error) {
       _showMessage(error.error.message);
     } catch (_) {
@@ -100,6 +109,27 @@ class SplendorTableController extends GetxController {
       _showMessage('读取合法行动失败，请确认后端服务已启动');
     } finally {
       isLoadingLegalActions.value = false;
+    }
+  }
+
+  /// 拉取当前对局行动历史，用于用户回看每一步操作。
+  Future<void> loadActionHistory() async {
+    final sessionId = sessionResponse.value?.session.id;
+    if (sessionId == null) {
+      return;
+    }
+
+    isLoadingActionHistory.value = true;
+
+    try {
+      final response = await _splendorApi.getActions(sessionId);
+      actionHistory.assignAll(response.actions);
+    } on ApiException catch (error) {
+      _showMessage(error.error.message);
+    } catch (_) {
+      _showMessage('读取行动历史失败，请确认后端服务已启动');
+    } finally {
+      isLoadingActionHistory.value = false;
     }
   }
 
@@ -134,6 +164,7 @@ class SplendorTableController extends GetxController {
         playerAfter: response.state.players[playerIndex],
       );
       await loadLegalActions();
+      await loadActionHistory();
     } on ApiException catch (error) {
       _showMessage(error.error.message);
     } catch (_) {
