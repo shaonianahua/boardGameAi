@@ -16,6 +16,7 @@ class SplendorPlayerAssetsPanel extends StatelessWidget {
     required this.cardsById,
     this.showTokens = false,
     this.showReservedCards = false,
+    this.hiddenReservedCardIds = const <String>{},
     this.onReservedCardSelected,
     super.key,
   });
@@ -31,6 +32,9 @@ class SplendorPlayerAssetsPanel extends StatelessWidget {
 
   /// 是否展示玩家预留卡详情。
   final bool showReservedCards;
+
+  /// 需要隐藏卡面的预留卡 ID，例如其他玩家从牌堆盲抽的预留卡。
+  final Set<String> hiddenReservedCardIds;
 
   /// 点击预留卡时触发；为空时预留卡只展示不可交互卡面。
   final ValueChanged<SplendorCard>? onReservedCardSelected;
@@ -73,6 +77,7 @@ class SplendorPlayerAssetsPanel extends StatelessWidget {
           _ReservedCardsSection(
             cardIds: player.reservedCards,
             cardsById: cardsById,
+            hiddenCardIds: hiddenReservedCardIds,
             onCardSelected: onReservedCardSelected,
           ),
         ],
@@ -241,11 +246,13 @@ class _ReservedCardsSection extends StatelessWidget {
   const _ReservedCardsSection({
     required this.cardIds,
     required this.cardsById,
+    required this.hiddenCardIds,
     required this.onCardSelected,
   });
 
   final List<String> cardIds;
   final Map<String, SplendorCard> cardsById;
+  final Set<String> hiddenCardIds;
   final ValueChanged<SplendorCard>? onCardSelected;
 
   @override
@@ -266,6 +273,10 @@ class _ReservedCardsSection extends StatelessWidget {
               itemCount: cardIds.length,
               itemBuilder: (context, index) {
                 final cardId = cardIds[index];
+                if (hiddenCardIds.contains(cardId)) {
+                  return const _HiddenReservedCardTile();
+                }
+
                 final card = cardsById[cardId];
                 return SplendorDevelopmentCardTile(
                   card: card,
@@ -276,6 +287,45 @@ class _ReservedCardsSection extends StatelessWidget {
                 );
               },
             ),
+    );
+  }
+}
+
+/// 对其他玩家展示的隐藏预留卡占位，不暴露盲抽卡具体内容。
+class _HiddenReservedCardTile extends StatelessWidget {
+  const _HiddenReservedCardTile();
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Container(
+      height: 128.h,
+      padding: EdgeInsets.all(8.w),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.52),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: colorScheme.outlineVariant),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.visibility_off_outlined,
+            size: 22.w,
+            color: colorScheme.onSurface.withValues(alpha: 0.52),
+          ),
+          SizedBox(height: 6.h),
+          Text(
+            '隐藏预留卡',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: colorScheme.onSurface.withValues(alpha: 0.62),
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

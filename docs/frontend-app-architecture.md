@@ -689,6 +689,7 @@ PlayerCountSelector(
 - 提供刷新按钮，通过 `SplendorApi.getSession` 重新拉取当前状态。
 - 当前玩家摘要固定展示玩家手里的各色宝石、分数、永久 bonus 和预留数量。
 - 负责打开市场发展卡行动面板，并把后端合法行动提交给控制器。
+- 通过行动历史中 `reserve_card source: deck` 的前后状态差异，识别其他玩家从牌堆盲抽的预留卡，并在对手详情中隐藏这些卡面。
 
 核心类：
 
@@ -700,6 +701,7 @@ PlayerCountSelector(
 - `_CompactOpponentCard`：单个对手的紧凑摘要。
 - `_TurnPrompt`：当前回合提示；如果存在 `pendingAction`，会提示先弃宝石或先选贵族，避免误认为已经进入下一位玩家普通行动。
 - `_EmptySessionView`：路由参数缺失时的空状态。
+- `_hiddenReservedCardIdsByPlayer(...)`：根据行动历史识别每位玩家需要隐藏的盲抽预留卡；历史加载中时保守隐藏全部对手预留卡。
 
 核心方法：
 
@@ -926,6 +928,7 @@ final lookup = SplendorCatalogLookup(controller.catalog.value);
 - 桌面页市场卡牌区域。
 - 把市场卡牌 ID 映射成真实卡面。
 - 向上抛出用户点选的发展卡，不直接处理购买或预留提交。
+- 向每个等级的 `SplendorMarketSection` 传入合法行动和提交回调，用于展示牌堆盲抽预留按钮。
 
 核心类：
 
@@ -934,6 +937,9 @@ final lookup = SplendorCatalogLookup(controller.catalog.value);
 核心参数：
 
 - `onCardSelected`：用户点选市场卡后的回调，通常由 `SplendorTablePage` 打开 `CardActionsSheet`。
+- `legalActions`：后端返回的合法行动，用于匹配 `reserve_card source: deck`。
+- `isSubmitting`：行动提交中状态。
+- `onSubmit`：提交匹配到的合法行动。
 
 ### `frontend/lib/pages/splendor/table/widgets/splendor_noble_card.dart`
 
@@ -983,10 +989,18 @@ final lookup = SplendorCatalogLookup(controller.catalog.value);
 
 - 桌面页单个等级的市场卡牌区域。
 - 把当前等级市场卡 ID 映射成 `SplendorDevelopmentCardTile`，并传递卡牌点击回调。
+- 在等级标题旁展示牌堆盲抽预留按钮；按钮只匹配后端返回的 `reserve_card`、`source: deck`、`level` 对应行动，不在前端推导规则。
 
 核心类：
 
 - `SplendorMarketSection`
+
+核心参数：
+
+- `level`：当前市场等级，用于匹配盲抽预留行动。
+- `actions`：当前合法行动列表。
+- `isSubmitting`：行动提交中状态。
+- `onSubmit`：提交匹配到的盲抽预留行动。
 
 ### `frontend/lib/pages/splendor/table/widgets/splendor_development_card_tile.dart`
 
@@ -1072,8 +1086,8 @@ final lookup = SplendorCatalogLookup(controller.catalog.value);
 
 - 玩家资产详情面板。
 - 当前玩家直接在摘要卡下方复用它展示五色永久宝石汇总、已购分数卡和预留卡。
-- 其他玩家点击顶部玩家面板后，在弹窗内复用它展示分数、永久宝石汇总、已购分数卡、预留卡牌和手里宝石。
-- 永久宝石数量只在上方五色汇总展示；下方已购卡牌区域只展示分数卡，避免重复展示卡牌颜色。预留卡牌复用 `SplendorDevelopmentCardTile` 展示完整卡面，传入 `onReservedCardSelected` 时可点击。
+- 其他玩家点击顶部玩家面板后，在弹窗内复用它展示分数、永久宝石汇总、已购分数卡、预留卡数量和手里宝石；从牌堆盲抽的预留卡用隐藏占位展示，避免泄露隐藏信息。
+- 永久宝石数量只在上方五色汇总展示；下方已购卡牌区域只展示分数卡，避免重复展示卡牌颜色。可见预留卡牌复用 `SplendorDevelopmentCardTile` 展示完整卡面，传入 `onReservedCardSelected` 时可点击。
 
 核心类：
 
@@ -1085,6 +1099,7 @@ final lookup = SplendorCatalogLookup(controller.catalog.value);
 - `cardsById`：发展卡 catalog 索引。
 - `showTokens`：是否展示当前手里的 token，默认不展示。
 - `showReservedCards`：是否展示预留卡牌详情，默认不展示。
+- `hiddenReservedCardIds`：需要隐藏卡面的预留卡 ID；对手盲抽预留卡会传入这里。
 - `onReservedCardSelected`：点击预留卡回调；为空时预留卡只展示。
 
 ### `frontend/lib/pages/splendor/table/widgets/splendor_gem_chip.dart`

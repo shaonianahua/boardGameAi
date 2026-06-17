@@ -21,6 +21,7 @@ docs/
 ├── project-architecture.md
 ├── backend-database-design.md
 ├── backend-implementation-v1.md
+├── ai-integration-plan.md
 └── splendor/
     ├── README.md
     ├── design.md
@@ -32,6 +33,7 @@ docs/
 - `project-architecture.md`：项目整体代码结构和分层说明。
 - `backend-database-design.md`：V1 后端数据库、GameState、Action 和接口边界设计。
 - `backend-implementation-v1.md`：V1 后端代码实现、接口、验证结果和当前限制。
+- `ai-integration-plan.md`：DeepSeek 等模型接入计划、prompt 位置、AI 边界和后续模块设计。
 - `splendor/`：璀璨宝石专属文档，包含规则、卡牌数据、AI 前置思路等。
 
 ## 代码结构

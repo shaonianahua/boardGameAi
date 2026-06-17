@@ -95,6 +95,11 @@ class _SplendorTablePageState extends State<SplendorTablePage> {
               legalActions?.playerIndex ??
               response?.state.currentPlayerIndex ??
               0;
+          final hiddenReservedCardIdsByPlayer = _hiddenReservedCardIdsByPlayer(
+            players: response?.state.players ?? const [],
+            actions: controller.actionHistory,
+            hideAllReservedCards: controller.isLoadingActionHistory.value,
+          );
 
           return response == null
               ? const _EmptySessionView()
@@ -105,6 +110,8 @@ class _SplendorTablePageState extends State<SplendorTablePage> {
                       players: response.state.players,
                       currentPlayerIndex: response.state.currentPlayerIndex,
                       cardsById: lookup.cardsById,
+                      hiddenReservedCardIdsByPlayer:
+                          hiddenReservedCardIdsByPlayer,
                     ),
                     SizedBox(height: 8.h),
                     SplendorMarketCard(
@@ -112,6 +119,9 @@ class _SplendorTablePageState extends State<SplendorTablePage> {
                       cardsById: lookup.cardsById,
                       isLoadingCatalog: controller.isLoadingCatalog.value,
                       onCardSelected: _showCardActions,
+                      legalActions: controller.legalActions.value,
+                      isSubmitting: controller.isSubmittingAction.value,
+                      onSubmit: controller.submitLegalAction,
                     ),
                     SizedBox(height: 8.h),
                     SplendorTokenPoolCard(
@@ -260,17 +270,70 @@ class _SplendorTablePageState extends State<SplendorTablePage> {
   }
 }
 
+/// 根据行动历史找出每个玩家从牌堆盲抽预留的隐藏卡。
+///
+/// 后端当前状态只保存 reserved card ID，本方法通过行动前后状态差异识别
+/// `reserve_card source: deck` 新增的卡，供对手详情隐藏卡面。
+Map<int, Set<String>> _hiddenReservedCardIdsByPlayer({
+  required List<SplendorPlayerState> players,
+  required List<SplendorActionRecord> actions,
+  required bool hideAllReservedCards,
+}) {
+  if (hideAllReservedCards) {
+    return {
+      for (final player in players)
+        player.seatIndex: player.reservedCards.toSet(),
+    };
+  }
+
+  final hiddenIdsByPlayer = <int, Set<String>>{};
+  for (final record in actions) {
+    final action = record.action;
+    final payload = action.payload;
+    if (action.type != SplendorActionType.reserveCard ||
+        payload['source'] != 'deck') {
+      continue;
+    }
+
+    final playerIndex = record.playerIndex;
+    final beforePlayer = _playerAt(record.stateBefore.players, playerIndex);
+    final afterPlayer = _playerAt(record.stateAfter.players, playerIndex);
+    if (beforePlayer == null || afterPlayer == null) {
+      continue;
+    }
+
+    final beforeReservedIds = beforePlayer.reservedCards.toSet();
+    final addedReservedIds = afterPlayer.reservedCards.where(
+      (cardId) => !beforeReservedIds.contains(cardId),
+    );
+    hiddenIdsByPlayer
+        .putIfAbsent(playerIndex, () => <String>{})
+        .addAll(addedReservedIds);
+  }
+
+  return hiddenIdsByPlayer;
+}
+
+SplendorPlayerState? _playerAt(List<SplendorPlayerState> players, int index) {
+  if (index < 0 || index >= players.length) {
+    return null;
+  }
+  return players[index];
+}
+
 /// 顶部对手摘要条。
 class _OpponentStrip extends StatelessWidget {
   const _OpponentStrip({
     required this.players,
     required this.currentPlayerIndex,
     required this.cardsById,
+    required this.hiddenReservedCardIdsByPlayer,
   });
 
   final List<SplendorPlayerState> players;
   final int currentPlayerIndex;
   final Map<String, SplendorCard> cardsById;
+  final Map<int, Set<String>> hiddenReservedCardIdsByPlayer;
 
   @override
   Widget build(BuildContext context) {
@@ -287,7 +350,13 @@ class _OpponentStrip extends StatelessWidget {
         return Expanded(
           child: Padding(
             padding: EdgeInsets.symmetric(horizontal: 3.w),
-            child: _CompactOpponentCard(player: player, cardsById: cardsById),
+            child: _CompactOpponentCard(
+              player: player,
+              cardsById: cardsById,
+              hiddenReservedCardIds:
+                  hiddenReservedCardIdsByPlayer[player.seatIndex] ??
+                  const <String>{},
+            ),
           ),
         );
       }).toList(),
@@ -297,10 +366,15 @@ class _OpponentStrip extends StatelessWidget {
 
 /// 顶部紧凑对手卡。
 class _CompactOpponentCard extends StatelessWidget {
-  const _CompactOpponentCard({required this.player, required this.cardsById});
+  const _CompactOpponentCard({
+    required this.player,
+    required this.cardsById,
+    required this.hiddenReservedCardIds,
+  });
 
   final SplendorPlayerState player;
   final Map<String, SplendorCard> cardsById;
+  final Set<String> hiddenReservedCardIds;
 
   @override
   Widget build(BuildContext context) {
@@ -406,6 +480,7 @@ class _CompactOpponentCard extends StatelessWidget {
                   cardsById: cardsById,
                   showTokens: true,
                   showReservedCards: true,
+                  hiddenReservedCardIds: hiddenReservedCardIds,
                 ),
               ],
             );

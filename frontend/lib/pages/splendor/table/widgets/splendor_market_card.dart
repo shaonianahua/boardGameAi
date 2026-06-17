@@ -13,6 +13,9 @@ class SplendorMarketCard extends StatelessWidget {
     required this.cardsById,
     required this.isLoadingCatalog,
     required this.onCardSelected,
+    required this.legalActions,
+    required this.isSubmitting,
+    required this.onSubmit,
     super.key,
   });
 
@@ -28,6 +31,15 @@ class SplendorMarketCard extends StatelessWidget {
   /// 用户点选一张市场发展卡后的回调，页面层负责决定买入或预留。
   final ValueChanged<SplendorCard> onCardSelected;
 
+  /// 当前后端返回的合法行动，用于匹配牌堆盲抽预留。
+  final SplendorLegalActionsResponse? legalActions;
+
+  /// 是否正在提交行动。
+  final bool isSubmitting;
+
+  /// 提交后端返回的合法行动。
+  final ValueChanged<SplendorLegalAction> onSubmit;
+
   @override
   Widget build(BuildContext context) {
     return SplendorInfoCard(
@@ -38,23 +50,35 @@ class SplendorMarketCard extends StatelessWidget {
           if (isLoadingCatalog) SizedBox(height: 12.h),
           SplendorMarketSection(
             title: '三级',
+            level: 3,
             cardIds: markets.level3,
             cardsById: cardsById,
             onCardSelected: onCardSelected,
+            actions: legalActions?.actions ?? const [],
+            isSubmitting: isSubmitting,
+            onSubmit: onSubmit,
           ),
           SizedBox(height: 14.h),
           SplendorMarketSection(
             title: '二级',
+            level: 2,
             cardIds: markets.level2,
             cardsById: cardsById,
             onCardSelected: onCardSelected,
+            actions: legalActions?.actions ?? const [],
+            isSubmitting: isSubmitting,
+            onSubmit: onSubmit,
           ),
           SizedBox(height: 14.h),
           SplendorMarketSection(
             title: '一级',
+            level: 1,
             cardIds: markets.level1,
             cardsById: cardsById,
             onCardSelected: onCardSelected,
+            actions: legalActions?.actions ?? const [],
+            isSubmitting: isSubmitting,
+            onSubmit: onSubmit,
           ),
         ],
       ),
