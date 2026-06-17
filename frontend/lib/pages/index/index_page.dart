@@ -3,6 +3,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:get/get.dart';
 
 import '../../app/app_colors.dart';
+import '../../app/routes.dart';
 
 class IndexPage extends StatelessWidget {
   const IndexPage({super.key});
@@ -27,14 +28,7 @@ class IndexPage extends StatelessWidget {
               sliver: SliverToBoxAdapter(
                 child: _GameEntryCard(
                   onStart: () {
-                    Get.snackbar(
-                      '璀璨宝石',
-                      '对局页将在下一步接入',
-                      snackPosition: SnackPosition.BOTTOM,
-                      margin: EdgeInsets.all(16.w),
-                      borderRadius: 8,
-                      duration: const Duration(seconds: 2),
-                    );
+                    Get.toNamed(AppRoutes.splendorCreateSession);
                   },
                 ),
               ),

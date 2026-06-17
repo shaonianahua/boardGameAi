@@ -47,6 +47,8 @@ frontend/lib/
 │   ├── index/
 │   │   └── index_page.dart
 │   └── splendor/
+│       ├── splendor_create_session_page.dart
+│       └── splendor_table_page.dart
 ├── services/
 │   └── splendor/
 └── shared/
@@ -432,10 +434,14 @@ color: AppColors.withOpacity(AppColors.primary, 0.12)
 | 常量 | 路径 | 页面 |
 | --- | --- | --- |
 | `AppRoutes.index` | `/` | `IndexPage` |
+| `AppRoutes.splendorCreateSession` | `/splendor/create-session` | `SplendorCreateSessionPage` |
+| `AppRoutes.splendorTable` | `/splendor/table` | `SplendorTablePage` |
 
 核心成员：
 
 - `static const index = '/'`：首页路径。
+- `static const splendorCreateSession = '/splendor/create-session'`：璀璨宝石创建对局页路径。
+- `static const splendorTable = '/splendor/table'`：璀璨宝石对局桌面页路径。
 - `static final pages = <GetPage>[...]`：GetX 路由表。
 
 用法：
@@ -511,7 +517,7 @@ theme: AppTheme.light
 核心方法：
 
 - `IndexPage.build(BuildContext context)`：构建首页滚动布局。
-- `_GameEntryCard.onStart`：点击“开始对局”后的回调入口。当前使用 `Get.snackbar` 提示“对局页将在下一步接入”。
+- `_GameEntryCard.onStart`：点击“开始对局”后的回调入口。当前跳转到 `AppRoutes.splendorCreateSession`。
 
 用法：
 
@@ -527,6 +533,100 @@ GetPage(
 - 首页只负责入口与概览。
 - 创建对局、选择玩家人数、玩家名称等流程应拆到 `pages/splendor/` 下的页面。
 - `_InfoChip` 等当前只在首页使用，暂不抽到 `shared/`。如果其他页面也需要，再抽成公共 widget，并记录到本文档“可复用 Widget”。
+
+### `frontend/lib/pages/splendor/splendor_create_session_page.dart`
+
+职责：
+
+- 璀璨宝石创建对局页。
+- 收集玩家人数和玩家名称。
+- 调用 `SplendorApi.createSession` 创建本地同屏对局。
+- 创建成功后跳转到 `AppRoutes.splendorTable`，并通过 `Get.arguments` 传递 `SplendorSessionResponse`。
+
+核心类：
+
+- `SplendorCreateSessionPage extends StatefulWidget`
+
+页面内部私有组件：
+
+- `_PlayerCountSelector`：2-4 人选择控件，使用 `SegmentedButton<int>`。
+
+核心方法：
+
+- `_createSession()`：校验玩家名称，提交 `SplendorCreateSessionInput`，处理成功跳转和错误提示。
+- `_showMessage(String message)`：用 `Get.snackbar` 显示创建对局相关提示。
+
+用法：
+
+```dart
+Get.toNamed(AppRoutes.splendorCreateSession);
+```
+
+维护规则：
+
+- 本页只负责创建对局表单和接口编排，不写璀璨宝石规则判断。
+- 玩家类型当前默认 `SplendorPlayerType.human`，未明确 Bot 需求前不要添加额外字段。
+- 新增创建参数时，必须先确认后端接口和需求，再更新 `SplendorCreateSessionInput` 与本文档。
+
+### `frontend/lib/pages/splendor/splendor_table_page.dart`
+
+职责：
+
+- 璀璨宝石对局桌面页。
+- 接收创建对局返回的 `SplendorSessionResponse`。
+- 展示当前回合、公共宝石池、市场卡牌详情、贵族详情和玩家摘要。
+- 调用 `SplendorApi.getCatalog`，把 `GameState` 中的卡牌/贵族 ID 映射成可读卡面信息。
+- 提供刷新按钮，通过 `SplendorApi.getSession` 重新拉取当前状态。
+
+核心类：
+
+- `SplendorTablePage extends StatefulWidget`
+
+页面内部私有组件：
+
+- `_SessionContent`：对局主体展示区。
+- `_TurnHeader`：当前回合摘要。
+- `_TokenPoolCard`：公共 token 池展示卡。
+- `_MarketCard`：市场卡牌展示卡，把卡牌 ID 映射成分数、奖励颜色和购买费用。
+- `_NobleCard`：贵族展示卡，把贵族 ID 映射成分数和到访需求。
+- `_PlayersCard`：玩家状态摘要卡。
+- `_InfoCard`：桌面页内部通用信息卡。
+- `_MarketLevelSection`：单个等级的市场卡牌区域。
+- `_DevelopmentCardTile`：发展卡简化卡面，展示等级、分数、奖励颜色和购买费用。
+- `_NobleTile`：贵族简化卡面，展示分数和到访所需永久宝石。
+- `_CostWrap`：宝石费用或需求集合展示。
+- `_CostChip`：单个颜色费用标签。
+- `_MissingCatalogTile`：catalog 未加载到对应 ID 时的兜底展示。
+- `_CatalogLoadingText`：catalog 正在加载时的说明文本。
+- `_PlayerSummaryRow`：玩家分数、token、bonus 和预留数量摘要。
+- `_GemChip`：宝石数量标签。
+- `_EmptySessionView`：路由参数缺失时的空状态。
+
+核心方法：
+
+- `_loadCatalog()`：读取固定 catalog，并保存到页面状态供卡牌/贵族展示使用。
+- `_refreshSession()`：按当前 `session.id` 拉取后端最新对局快照。
+- `_showMessage(String message)`：用 `Get.snackbar` 显示对局页提示。
+- `_tokenTotal(SplendorTokenSet tokens)`：计算玩家 token 总数。
+- `_bonusTotal(SplendorGemSet bonuses)`：计算玩家永久 bonus 总数。
+- `_nonZeroGemEntries(SplendorGemSet gems)`：提取非 0 宝石条目，供费用和需求展示使用。
+- `_levelLabel(int level)`：把后端等级数字转成 UI 展示文本。
+- `_gemName(String colorKey)` / `_gemShortName(String colorKey)`：把宝石颜色 key 转成中文。
+- `_gemColor(String colorKey)`：把宝石颜色 key 转成 UI 颜色。
+- `_readableTextColor(Color backgroundColor)`：根据背景亮度选择可读文字色。
+
+用法：
+
+```dart
+Get.offNamed(AppRoutes.splendorTable, arguments: sessionResponse);
+```
+
+维护规则：
+
+- 市场和贵族必须优先展示 catalog 信息；只有 catalog 缺失时才用 ID 兜底。
+- 行动按钮应优先基于 `SplendorApi.getLegalActions` 返回内容展示。
+- 提交行动后使用 `SplendorApi.submitAction` 返回的新 `state` 刷新页面。
+- 本页不重新实现后端已有的规则判断，只做必要的 UI 禁用和提示。
 
 ### `frontend/lib/shared/widgets/mobile_viewport.dart`
 
@@ -765,9 +865,9 @@ class SplendorRemoteService {
 
 下一步建议按以下顺序增加文件，并同步更新本文档：
 
-1. `pages/splendor/create_session_page.dart`：创建璀璨宝石对局，选择玩家人数和玩家名称。
-2. `pages/splendor/splendor_table_page.dart`：璀璨宝石对局桌面页面。
-3. `models/splendor/`：宝石、卡牌、贵族、玩家、GameState、Action、操作记录。
-4. `services/splendor/`：catalog、规则判断、对局初始化、行动执行。
+1. 接入 `SplendorApi.getLegalActions`，展示当前玩家可执行行动入口。
+2. 接入 `SplendorApi.submitAction`，完成拿宝石、预留、购买的首批交互。
+3. 处理 `pendingAction`：弃宝石和选择贵族。
+4. 继续优化卡面排版，必要时再把卡牌/贵族 tile 抽成可复用组件。
 
 每一步都先保证职责清晰，不把规则逻辑写进页面。
