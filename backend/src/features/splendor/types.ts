@@ -59,8 +59,22 @@ export interface SplendorGameState {
     triggeredByPlayerIndex: number | null;
     roundEndPlayerIndex: number | null;
   };
+  pendingAction: SplendorPendingAction | null;
   winnerPlayerIndex: number | null;
 }
+
+export type SplendorPendingAction =
+  | {
+      type: 'discard_tokens';
+      playerIndex: number;
+      tokenCount: number;
+      maxTokenCount: number;
+    }
+  | {
+      type: 'choose_noble';
+      playerIndex: number;
+      nobleIds: string[];
+    };
 
 export interface CreateSplendorSessionInput {
   playerCount: number;
@@ -104,3 +118,14 @@ export interface SubmitSplendorActionInput {
   action: SplendorAction;
 }
 
+export interface SplendorLegalAction {
+  action: SplendorAction;
+  label: string;
+}
+
+export interface SplendorLegalActionsResult {
+  playerIndex: number;
+  pendingAction: SplendorPendingAction | null;
+  actions: SplendorLegalAction[];
+  disabledReasons: string[];
+}

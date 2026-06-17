@@ -1,10 +1,11 @@
-import type { GameAction, GamePlayer, GameSession } from '@prisma/client';
+import type { GameAction, GamePlayer, GameSession, Prisma } from '@prisma/client';
 import { prisma } from '../../db/prisma.js';
-import { actionType, applySplendorAction } from './rules.js';
+import { actionType, applySplendorAction, generateSplendorLegalActions } from './rules.js';
 import { createInitialSplendorState, parseState, stringifyState } from './state.js';
 import type {
   CreateSplendorSessionInput,
   SplendorGameState,
+  SplendorLegalActionsResult,
   SubmitSplendorActionInput,
 } from './types.js';
 
@@ -41,6 +42,12 @@ export interface PublicActionRecord {
   createdAt: Date;
 }
 
+type GameSessionWithPlayers = Prisma.GameSessionGetPayload<{
+  include: {
+    players: true;
+  };
+}>;
+
 function safeJson(value: unknown): string {
   return JSON.stringify(value);
 }
@@ -76,6 +83,17 @@ function publicAction(action: GameAction): PublicActionRecord {
   };
 }
 
+function publicSessionResponse(
+  session: GameSessionWithPlayers,
+  state: SplendorGameState,
+): SplendorSessionResponse {
+  return {
+    session: publicSession(session),
+    players: session.players,
+    state,
+  };
+}
+
 export async function createSplendorSession(
   input: CreateSplendorSessionInput,
 ): Promise<SplendorSessionResponse> {
@@ -107,11 +125,7 @@ export async function createSplendorSession(
     },
   });
 
-  return {
-    session: publicSession(session),
-    players: session.players,
-    state,
-  };
+  return publicSessionResponse(session, state);
 }
 
 export async function getSplendorSession(sessionId: string): Promise<SplendorSessionResponse> {
@@ -128,11 +142,7 @@ export async function getSplendorSession(sessionId: string): Promise<SplendorSes
     throw new Error('session not found');
   }
 
-  return {
-    session: publicSession(session),
-    players: session.players,
-    state: parseState(session.stateJson),
-  };
+  return publicSessionResponse(session, parseState(session.stateJson));
 }
 
 export async function submitSplendorAction(
@@ -170,7 +180,7 @@ export async function submitSplendorAction(
       },
     });
 
-    return [createdAction, updatedSession];
+    return [createdAction, updatedSession] as const;
   });
 
   return {
@@ -186,4 +196,11 @@ export async function listSplendorActions(sessionId: string): Promise<PublicActi
     orderBy: [{ turnIndex: 'asc' }, { createdAt: 'asc' }],
   });
   return actions.map(publicAction);
+}
+
+export async function getSplendorLegalActions(
+  sessionId: string,
+): Promise<SplendorLegalActionsResult> {
+  const existing = await getSplendorSession(sessionId);
+  return generateSplendorLegalActions(existing.state);
 }

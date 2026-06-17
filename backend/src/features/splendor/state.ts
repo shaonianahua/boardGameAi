@@ -99,6 +99,7 @@ export function createInitialSplendorState(input: CreateSplendorSessionInput): S
       triggeredByPlayerIndex: null,
       roundEndPlayerIndex: null,
     },
+    pendingAction: null,
     winnerPlayerIndex: null,
   };
 }
@@ -110,4 +111,3 @@ export function parseState(stateJson: string): SplendorGameState {
 export function stringifyState(state: SplendorGameState): string {
   return JSON.stringify(state);
 }
-

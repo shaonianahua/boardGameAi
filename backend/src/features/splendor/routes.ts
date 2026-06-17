@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { splendorCards, splendorNobles } from './catalog.js';
 import {
   createSplendorSession,
+  getSplendorLegalActions,
   getSplendorSession,
   listSplendorActions,
   submitSplendorAction,
@@ -10,6 +11,23 @@ import type { CreateSplendorSessionInput, SubmitSplendorActionInput } from './ty
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'unknown error';
+}
+
+function errorCode(error: unknown): string {
+  const message = errorMessage(error);
+  return message
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toUpperCase() || 'UNKNOWN_ERROR';
+}
+
+function errorResponse(error: unknown): { error: { code: string; message: string } } {
+  return {
+    error: {
+      code: errorCode(error),
+      message: errorMessage(error),
+    },
+  };
 }
 
 export async function registerSplendorRoutes(app: FastifyInstance): Promise<void> {
@@ -25,7 +43,7 @@ export async function registerSplendorRoutes(app: FastifyInstance): Promise<void
       const result = await createSplendorSession(request.body as CreateSplendorSessionInput);
       return result;
     } catch (error) {
-      return reply.status(400).send({ error: errorMessage(error) });
+      return reply.status(400).send(errorResponse(error));
     }
   });
 
@@ -34,7 +52,16 @@ export async function registerSplendorRoutes(app: FastifyInstance): Promise<void
       const params = request.params as { sessionId: string };
       return await getSplendorSession(params.sessionId);
     } catch (error) {
-      return reply.status(404).send({ error: errorMessage(error) });
+      return reply.status(404).send(errorResponse(error));
+    }
+  });
+
+  app.get('/api/splendor/sessions/:sessionId/legal-actions', async (request, reply) => {
+    try {
+      const params = request.params as { sessionId: string };
+      return await getSplendorLegalActions(params.sessionId);
+    } catch (error) {
+      return reply.status(400).send(errorResponse(error));
     }
   });
 
@@ -46,7 +73,7 @@ export async function registerSplendorRoutes(app: FastifyInstance): Promise<void
         request.body as SubmitSplendorActionInput,
       );
     } catch (error) {
-      return reply.status(400).send({ error: errorMessage(error) });
+      return reply.status(400).send(errorResponse(error));
     }
   });
 
@@ -55,7 +82,7 @@ export async function registerSplendorRoutes(app: FastifyInstance): Promise<void
       const params = request.params as { sessionId: string };
       return { actions: await listSplendorActions(params.sessionId) };
     } catch (error) {
-      return reply.status(400).send({ error: errorMessage(error) });
+      return reply.status(400).send(errorResponse(error));
     }
   });
 

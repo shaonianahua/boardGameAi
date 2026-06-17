@@ -12,6 +12,7 @@
 - 创建本地对局。
 - 查询对局。
 - 提交玩家行动。
+- 查询当前合法行动。
 - 查询行动历史。
 - 保存当前 `GameState` 快照。
 - 保存每一步行动的前后状态快照。
@@ -147,6 +148,19 @@ POST /api/splendor/sessions/:sessionId/actions
 - `actionRecord`：结构化行动记录。
 - `state`：更新后的完整 `GameState`。
 
+### 查询合法行动
+
+```text
+GET /api/splendor/sessions/:sessionId/legal-actions
+```
+
+返回：
+
+- `playerIndex`：当前行动玩家座位。
+- `pendingAction`：当前待处理动作，为空表示可执行主行动。
+- `actions`：当前可提交的合法 Action 列表。
+- `disabledReasons`：无可行动作或状态不可行动时的原因。
+
 ### 查询行动历史
 
 ```text
@@ -175,16 +189,19 @@ GET /api/splendor/sessions/:sessionId/actions
 - 折扣、扣宝石、回宝石池。
 - 购买后获得 bonus 和分数。
 - 购买市场卡后补牌。
-- 自动检查第一个满足的贵族。
+- 自动处理唯一满足的贵族。
+- 同时满足多个贵族时进入 `pendingAction: choose_noble`，等待玩家选择。
+- 超过 10 个 token 时进入 `pendingAction: discard_tokens`，等待玩家弃宝石。
 - 15 分终局触发和胜负结算基础逻辑。
 - 行动后推进当前玩家。
+- 查询当前合法行动。
+
+当前测试：
+
+- `src/features/splendor/__tests__/rules.test.ts` 覆盖初始合法行动、弃宝石 pending、多贵族 pending。
 
 当前限制：
 
-- 超过 10 个 token 后的弃宝石流程暂时返回错误，还没有实现“行动后进入待弃宝石状态”。
-- 同时满足多个贵族时，当前自动取第一个满足的贵族，还没有实现玩家选择。
-- 规则测试还没补齐。
-- 没有实现合法行动枚举接口。
 - 没有实现 Bot 或 AI 决策接口。
 
 这些限制不影响 V1 后端接口骨架，但前端开发前需要逐项补齐或明确交互方式。
@@ -195,6 +212,7 @@ GET /api/splendor/sessions/:sessionId/actions
 
 ```text
 npm run build
+npm test
 ```
 
 通过。
@@ -245,4 +263,3 @@ npm run dev
 - 再接创建对局。
 - 再做对局页状态展示。
 - 最后接提交行动。
-

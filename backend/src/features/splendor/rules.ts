@@ -4,6 +4,8 @@ import type {
   GemColor,
   SplendorAction,
   SplendorGameState,
+  SplendorLegalAction,
+  SplendorLegalActionsResult,
   SplendorPlayerState,
   TokenColor,
   TokenSet,
@@ -11,6 +13,7 @@ import type {
 
 const gemColors: GemColor[] = ['white', 'blue', 'green', 'red', 'black'];
 const tokenColors: TokenColor[] = ['white', 'blue', 'green', 'red', 'black', 'gold'];
+const maxPlayerTokenCount = 10;
 
 const totalTokens = (tokens: FullTokenSet): number =>
   tokenColors.reduce((sum, color) => sum + tokens[color], 0);
@@ -69,6 +72,12 @@ function assertActiveTurn(state: SplendorGameState, playerIndex: number): Splend
   return player;
 }
 
+function assertNoPendingAction(state: SplendorGameState): void {
+  if (state.pendingAction) {
+    throw new Error(`pending ${state.pendingAction.type} must be resolved first`);
+  }
+}
+
 function applyTakeTokens(state: SplendorGameState, player: SplendorPlayerState, tokens: TokenSet): void {
   assertNonNegativeTokens(tokens);
   const normalized = normalizeTokenSet(tokens);
@@ -104,10 +113,6 @@ function applyTakeTokens(state: SplendorGameState, player: SplendorPlayerState, 
   for (const color of gemColors) {
     state.tokenPool[color] -= normalized[color];
     player.tokens[color] += normalized[color];
-  }
-
-  if (totalTokens(player.tokens) > 10) {
-    throw new Error('player token count exceeds 10; discard flow is not implemented yet');
   }
 }
 
@@ -154,10 +159,6 @@ function applyReserveCard(
     state.tokenPool.gold -= 1;
     player.tokens.gold += 1;
   }
-
-  if (totalTokens(player.tokens) > 10) {
-    throw new Error('player token count exceeds 10; discard flow is not implemented yet');
-  }
 }
 
 function canPay(player: SplendorPlayerState, cardId: string, payment: FullTokenSet): boolean {
@@ -201,6 +202,10 @@ function defaultPayment(player: SplendorPlayerState, cardId: string): FullTokenS
   return payment;
 }
 
+function canAfford(player: SplendorPlayerState, cardId: string): boolean {
+  return canPay(player, cardId, defaultPayment(player, cardId));
+}
+
 function applyBuyCard(
   state: SplendorGameState,
   player: SplendorPlayerState,
@@ -209,6 +214,12 @@ function applyBuyCard(
   const card = cardById.get(action.cardId);
   if (!card) {
     throw new Error('card not found');
+  }
+
+  const payment = normalizeTokenSet(action.payment ?? defaultPayment(player, action.cardId));
+  assertNonNegativeTokens(payment);
+  if (!canPay(player, action.cardId, payment)) {
+    throw new Error('payment cannot cover card cost');
   }
 
   let purchasedFromMarketLevel: 1 | 2 | 3 | null = null;
@@ -220,12 +231,6 @@ function applyBuyCard(
       throw new Error('card is not reserved by player');
     }
     player.reservedCards.splice(index, 1);
-  }
-
-  const payment = normalizeTokenSet(action.payment ?? defaultPayment(player, action.cardId));
-  assertNonNegativeTokens(payment);
-  if (!canPay(player, action.cardId, payment)) {
-    throw new Error('payment cannot cover card cost');
   }
 
   for (const color of tokenColors) {
@@ -242,25 +247,57 @@ function applyBuyCard(
   }
 }
 
-function applyNobleVisits(state: SplendorGameState, player: SplendorPlayerState): void {
-  const visitingNobleId = state.nobles.find((nobleId) => {
+function eligibleNobleIds(state: SplendorGameState, player: SplendorPlayerState): string[] {
+  return state.nobles.filter((nobleId) => {
     const noble = nobleById.get(nobleId);
     if (!noble) return false;
     return gemColors.every((color) => player.bonuses[color] >= noble.requirement[color]);
   });
+}
 
-  if (!visitingNobleId) {
-    return;
-  }
-
-  const noble = nobleById.get(visitingNobleId);
+function awardNoble(state: SplendorGameState, player: SplendorPlayerState, nobleId: string): void {
+  const noble = nobleById.get(nobleId);
   if (!noble) {
+    throw new Error('noble not found');
+  }
+  if (!state.nobles.includes(nobleId)) {
+    throw new Error('noble is not available');
+  }
+
+  state.nobles = state.nobles.filter((availableNobleId) => availableNobleId !== nobleId);
+  player.nobles.push(nobleId);
+  player.score += noble.prestige;
+}
+
+function resolveNobleVisits(state: SplendorGameState, player: SplendorPlayerState): void {
+  const eligible = eligibleNobleIds(state, player);
+  if (eligible.length === 0) {
+    return;
+  }
+  if (eligible.length === 1) {
+    awardNoble(state, player, eligible[0]);
     return;
   }
 
-  state.nobles = state.nobles.filter((nobleId) => nobleId !== visitingNobleId);
-  player.nobles.push(visitingNobleId);
-  player.score += noble.prestige;
+  state.pendingAction = {
+    type: 'choose_noble',
+    playerIndex: player.seatIndex,
+    nobleIds: eligible,
+  };
+}
+
+function setDiscardPendingIfNeeded(state: SplendorGameState, player: SplendorPlayerState): void {
+  const tokenCount = totalTokens(player.tokens);
+  if (tokenCount <= maxPlayerTokenCount) {
+    return;
+  }
+
+  state.pendingAction = {
+    type: 'discard_tokens',
+    playerIndex: player.seatIndex,
+    tokenCount,
+    maxTokenCount: maxPlayerTokenCount,
+  };
 }
 
 function updateFinalRound(state: SplendorGameState, player: SplendorPlayerState): void {
@@ -287,6 +324,76 @@ function pickWinner(state: SplendorGameState): number {
   return sorted[0].seatIndex;
 }
 
+function finishActionIfNoPending(state: SplendorGameState, player: SplendorPlayerState): void {
+  if (state.pendingAction) {
+    return;
+  }
+
+  updateFinalRound(state, player);
+  if (state.status === 'active') {
+    nextPlayer(state);
+  }
+}
+
+function applyDiscardTokens(
+  state: SplendorGameState,
+  player: SplendorPlayerState,
+  tokens: TokenSet,
+): void {
+  const pending = state.pendingAction;
+  if (!pending || pending.type !== 'discard_tokens') {
+    throw new Error('no discard_tokens action is pending');
+  }
+  if (pending.playerIndex !== player.seatIndex) {
+    throw new Error('pending discard_tokens belongs to another player');
+  }
+
+  assertNonNegativeTokens(tokens);
+  const normalized = normalizeTokenSet(tokens);
+  const discardCount = totalTokens(normalized);
+  const requiredDiscardCount = pending.tokenCount - pending.maxTokenCount;
+  if (discardCount !== requiredDiscardCount) {
+    throw new Error(`must discard exactly ${requiredDiscardCount} token(s)`);
+  }
+
+  for (const color of tokenColors) {
+    if (normalized[color] > player.tokens[color]) {
+      throw new Error(`not enough ${color} tokens to discard`);
+    }
+  }
+
+  for (const color of tokenColors) {
+    player.tokens[color] -= normalized[color];
+    state.tokenPool[color] += normalized[color];
+  }
+
+  if (totalTokens(player.tokens) !== pending.maxTokenCount) {
+    throw new Error('discard must leave player with exactly 10 tokens');
+  }
+
+  state.pendingAction = null;
+}
+
+function applyChooseNoble(
+  state: SplendorGameState,
+  player: SplendorPlayerState,
+  nobleId: string,
+): void {
+  const pending = state.pendingAction;
+  if (!pending || pending.type !== 'choose_noble') {
+    throw new Error('no choose_noble action is pending');
+  }
+  if (pending.playerIndex !== player.seatIndex) {
+    throw new Error('pending choose_noble belongs to another player');
+  }
+  if (!pending.nobleIds.includes(nobleId)) {
+    throw new Error('noble is not eligible');
+  }
+
+  awardNoble(state, player, nobleId);
+  state.pendingAction = null;
+}
+
 export function applySplendorAction(
   inputState: SplendorGameState,
   playerIndex: number,
@@ -295,26 +402,34 @@ export function applySplendorAction(
   const state = cloneState(inputState);
   const player = assertActiveTurn(state, playerIndex);
 
+  if (action.type === 'discard_tokens') {
+    applyDiscardTokens(state, player, action.tokens);
+    finishActionIfNoPending(state, player);
+    return state;
+  }
+
+  if (action.type === 'choose_noble') {
+    applyChooseNoble(state, player, action.nobleId);
+    finishActionIfNoPending(state, player);
+    return state;
+  }
+
+  assertNoPendingAction(state);
+
   if (action.type === 'take_tokens') {
     applyTakeTokens(state, player, action.tokens);
+    setDiscardPendingIfNeeded(state, player);
   } else if (action.type === 'reserve_card') {
     applyReserveCard(state, player, action);
+    setDiscardPendingIfNeeded(state, player);
   } else if (action.type === 'buy_card') {
     applyBuyCard(state, player, action);
-  } else if (action.type === 'discard_tokens') {
-    throw new Error('discard_tokens is not implemented as standalone action yet');
-  } else if (action.type === 'choose_noble') {
-    throw new Error('choose_noble is not implemented as standalone action yet');
+    resolveNobleVisits(state, player);
   } else {
     throw new Error('unsupported action type');
   }
 
-  applyNobleVisits(state, player);
-  updateFinalRound(state, player);
-  if (state.status === 'active') {
-    nextPlayer(state);
-  }
-
+  finishActionIfNoPending(state, player);
   return state;
 }
 
@@ -322,3 +437,215 @@ export function actionType(action: SplendorAction): string {
   return action.type;
 }
 
+function tokenSetFromEntries(entries: Array<[TokenColor, number]>): TokenSet {
+  return entries.reduce<TokenSet>((tokens, [color, amount]) => {
+    if (amount > 0) {
+      tokens[color] = amount;
+    }
+    return tokens;
+  }, {});
+}
+
+function discardCombinations(tokens: FullTokenSet, count: number): TokenSet[] {
+  const results: TokenSet[] = [];
+
+  function visit(colorIndex: number, remaining: number, entries: Array<[TokenColor, number]>): void {
+    if (colorIndex === tokenColors.length) {
+      if (remaining === 0) {
+        results.push(tokenSetFromEntries(entries));
+      }
+      return;
+    }
+
+    const color = tokenColors[colorIndex];
+    const maxAmount = Math.min(tokens[color], remaining);
+    for (let amount = 0; amount <= maxAmount; amount += 1) {
+      visit(colorIndex + 1, remaining - amount, [...entries, [color, amount]]);
+    }
+  }
+
+  visit(0, count, []);
+  return results;
+}
+
+function appendTakeTokenActions(state: SplendorGameState, actions: SplendorLegalAction[]): void {
+  for (let left = 0; left < gemColors.length; left += 1) {
+    for (let middle = left + 1; middle < gemColors.length; middle += 1) {
+      for (let right = middle + 1; right < gemColors.length; right += 1) {
+        const colors = [gemColors[left], gemColors[middle], gemColors[right]];
+        if (colors.every((color) => state.tokenPool[color] > 0)) {
+          actions.push({
+            action: {
+              type: 'take_tokens',
+              tokens: tokenSetFromEntries(colors.map((color) => [color, 1])),
+            },
+            label: `Take ${colors.join(', ')}`,
+          });
+        }
+      }
+    }
+  }
+
+  for (const color of gemColors) {
+    if (state.tokenPool[color] >= 4) {
+      actions.push({
+        action: {
+          type: 'take_tokens',
+          tokens: { [color]: 2 },
+        },
+        label: `Take 2 ${color}`,
+      });
+    }
+  }
+}
+
+function appendReserveActions(
+  state: SplendorGameState,
+  player: SplendorPlayerState,
+  actions: SplendorLegalAction[],
+): void {
+  if (player.reservedCards.length >= 3) {
+    return;
+  }
+
+  for (const level of [1, 2, 3] as const) {
+    const marketKey = `level${level}` as const;
+    for (const cardId of state.markets[marketKey]) {
+      actions.push({
+        action: {
+          type: 'reserve_card',
+          source: 'market',
+          level,
+          cardId,
+        },
+        label: `Reserve ${cardId}`,
+      });
+    }
+
+    if (state.decks[marketKey].length > 0) {
+      actions.push({
+        action: {
+          type: 'reserve_card',
+          source: 'deck',
+          level,
+        },
+        label: `Reserve blind level ${level}`,
+      });
+    }
+  }
+}
+
+function appendBuyActions(
+  state: SplendorGameState,
+  player: SplendorPlayerState,
+  actions: SplendorLegalAction[],
+): void {
+  for (const level of [1, 2, 3] as const) {
+    const marketKey = `level${level}` as const;
+    for (const cardId of state.markets[marketKey]) {
+      if (canAfford(player, cardId)) {
+        actions.push({
+          action: {
+            type: 'buy_card',
+            source: 'market',
+            cardId,
+          },
+          label: `Buy ${cardId}`,
+        });
+      }
+    }
+  }
+
+  for (const cardId of player.reservedCards) {
+    if (canAfford(player, cardId)) {
+      actions.push({
+        action: {
+          type: 'buy_card',
+          source: 'reserved',
+          cardId,
+        },
+        label: `Buy reserved ${cardId}`,
+      });
+    }
+  }
+}
+
+export function generateSplendorLegalActions(
+  state: SplendorGameState,
+): SplendorLegalActionsResult {
+  const playerIndex = state.currentPlayerIndex;
+  const player = state.players[playerIndex];
+  const disabledReasons: string[] = [];
+  const actions: SplendorLegalAction[] = [];
+
+  if (state.status !== 'active') {
+    return {
+      playerIndex,
+      pendingAction: state.pendingAction,
+      actions,
+      disabledReasons: ['session is not active'],
+    };
+  }
+
+  if (!player) {
+    return {
+      playerIndex,
+      pendingAction: state.pendingAction,
+      actions,
+      disabledReasons: ['current player not found'],
+    };
+  }
+
+  if (state.pendingAction?.type === 'discard_tokens') {
+    const requiredDiscardCount =
+      state.pendingAction.tokenCount - state.pendingAction.maxTokenCount;
+    for (const tokens of discardCombinations(player.tokens, requiredDiscardCount)) {
+      actions.push({
+        action: {
+          type: 'discard_tokens',
+          tokens,
+        },
+        label: 'Discard tokens',
+      });
+    }
+    return {
+      playerIndex,
+      pendingAction: state.pendingAction,
+      actions,
+      disabledReasons,
+    };
+  }
+
+  if (state.pendingAction?.type === 'choose_noble') {
+    for (const nobleId of state.pendingAction.nobleIds) {
+      actions.push({
+        action: {
+          type: 'choose_noble',
+          nobleId,
+        },
+        label: `Choose ${nobleId}`,
+      });
+    }
+    return {
+      playerIndex,
+      pendingAction: state.pendingAction,
+      actions,
+      disabledReasons,
+    };
+  }
+
+  appendTakeTokenActions(state, actions);
+  appendReserveActions(state, player, actions);
+  appendBuyActions(state, player, actions);
+
+  if (actions.length === 0) {
+    disabledReasons.push('no legal actions available');
+  }
+
+  return {
+    playerIndex,
+    pendingAction: state.pendingAction,
+    actions,
+    disabledReasons,
+  };
+}

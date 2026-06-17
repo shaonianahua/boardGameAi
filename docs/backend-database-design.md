@@ -262,9 +262,35 @@ data/seeds/splendor_nobles.json
     "triggeredByPlayerIndex": null,
     "roundEndPlayerIndex": null
   },
+  "pendingAction": null,
   "winnerPlayerIndex": null
 }
 ```
+
+`pendingAction` 用于表达主行动后还必须由当前玩家继续处理的步骤。V1 当前包含：
+
+```json
+{
+  "type": "discard_tokens",
+  "playerIndex": 0,
+  "tokenCount": 12,
+  "maxTokenCount": 10
+}
+```
+
+```json
+{
+  "type": "choose_noble",
+  "playerIndex": 0,
+  "nobleIds": ["noble-001", "noble-002"]
+}
+```
+
+说明：
+
+- `pendingAction` 不为空时，不推进到下一位玩家。
+- 前端必须先提交对应的 `discard_tokens` 或 `choose_noble` action。
+- 后端处理完 pending action 后，才会推进回合或结算终局。
 
 ## Action JSON 结构
 
@@ -412,6 +438,37 @@ POST /api/splendor/sessions/:sessionId/actions
 }
 ```
 
+### 获取合法行动
+
+```text
+GET /api/splendor/sessions/:sessionId/legal-actions
+```
+
+返回当前玩家可执行行动。如果 `state.pendingAction` 不为空，只返回 pending action 对应的合法行动。
+
+返回：
+
+```json
+{
+  "playerIndex": 0,
+  "pendingAction": null,
+  "actions": [
+    {
+      "action": {
+        "type": "take_tokens",
+        "tokens": {
+          "white": 1,
+          "blue": 1,
+          "green": 1
+        }
+      },
+      "label": "Take white, blue, green"
+    }
+  ],
+  "disabledReasons": []
+}
+```
+
 ### 获取行动历史
 
 ```text
@@ -457,4 +514,3 @@ AiDecision
 - 多桌游通用平台抽象。
 
 这些能力会显著增加复杂度，不符合当前作品项目的重点。
-
