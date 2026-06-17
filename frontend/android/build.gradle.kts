@@ -1,7 +1,10 @@
 allprojects {
     repositories {
+        maven { url = uri("$rootDir/local-maven") }
         google()
         mavenCentral()
+        maven { url = uri("https://maven.aliyun.com/repository/google") }
+        maven { url = uri("https://maven.aliyun.com/repository/public") }
     }
 }
 

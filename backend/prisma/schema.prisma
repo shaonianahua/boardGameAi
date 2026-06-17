@@ -1,0 +1,86 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model GameSession {
+  id                 String    @id @default(cuid())
+  gameType           String
+  title              String?
+  status             String    @default("active")
+  playerCount        Int
+  currentTurnIndex   Int       @default(0)
+  currentPlayerIndex Int       @default(0)
+  winnerPlayerIndex  Int?
+  stateJson          String
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  finishedAt         DateTime?
+
+  players     GamePlayer[]
+  actions     GameAction[]
+  aiDecisions AiDecision[]
+
+  @@index([gameType])
+  @@index([status])
+  @@index([updatedAt])
+}
+
+model GamePlayer {
+  id         String   @id @default(cuid())
+  sessionId  String
+  seatIndex  Int
+  name       String
+  playerType String
+  botLevel   String?
+  createdAt  DateTime @default(now())
+
+  session GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, seatIndex])
+  @@index([sessionId])
+}
+
+model GameAction {
+  id              String   @id @default(cuid())
+  sessionId       String
+  turnIndex       Int
+  playerIndex     Int
+  actorType       String
+  actionType      String
+  actionJson      String
+  stateBeforeJson String
+  stateAfterJson  String
+  createdAt       DateTime @default(now())
+
+  session    GameSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  aiDecision AiDecision?
+
+  @@index([sessionId, turnIndex])
+  @@index([sessionId, playerIndex])
+  @@index([actionType])
+}
+
+model AiDecision {
+  id                 String   @id @default(cuid())
+  sessionId          String
+  actionId           String?  @unique
+  playerIndex        Int
+  provider           String
+  model              String?
+  inputJson          String
+  outputJson         String
+  selectedActionJson String
+  tokenUsageJson     String?
+  createdAt          DateTime @default(now())
+
+  session GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  action  GameAction? @relation(fields: [actionId], references: [id], onDelete: SetNull)
+
+  @@index([sessionId])
+  @@index([playerIndex])
+}

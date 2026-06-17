@@ -16,3 +16,12 @@ fvm flutter run
 
 后端和数据库骨架后续在 `backend/` 下继续补。
 
+后端本地运行：
+
+```bash
+cd backend
+npm install
+npm run prisma:migrate -- --name init
+npm run dev
+```
+

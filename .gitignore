@@ -13,6 +13,7 @@
 /frontend/android/app/debug/
 /frontend/android/app/profile/
 /frontend/android/app/release/
+/frontend/android/local-maven/
 /frontend/android/local.properties
 /frontend/ios/Flutter/ephemeral/
 /frontend/macos/Flutter/ephemeral/
@@ -25,14 +26,14 @@
 
 # Backend
 /backend/node_modules/
+/backend/.npm-cache/
 /backend/dist/
 /backend/.env
 /backend/*.sqlite
 /backend/*.db
 
 # Data
-/data/*.sqlite
-/data/*.db
-/data/*.sqlite-journal
-/data/*.sqlite-wal
-
+/data/**/*.sqlite
+/data/**/*.db
+/data/**/*.sqlite-journal
+/data/**/*.sqlite-wal
