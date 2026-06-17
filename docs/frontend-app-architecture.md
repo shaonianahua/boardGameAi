@@ -8,6 +8,8 @@
 
 本文件用于记录 `frontend/lib/` 下的 App 架构、文件职责、核心类、核心方法、可复用 widget 和使用方式。后续新增或修改页面、路由、主题、模型、服务、公共组件时，都要同步更新本文件。
 
+后续新增或修改 API、model、组件、widget、公共功能方法、核心业务方法时，代码里必须保留最基本的备注信息，说明用途、输入输出、对应接口或使用场景，保证后续阅读和复用时不费劲。
+
 ## 当前目标
 
 当前 App 阶段先实现璀璨宝石本地同屏对局。前端重点是：
@@ -24,13 +26,23 @@
 ```text
 frontend/lib/
 ├── main.dart
+├── api/
+│   ├── api_config.dart
+│   ├── api_paths.dart
+│   └── splendor_api.dart
 ├── app/
 │   ├── app_colors.dart
 │   ├── app.dart
 │   ├── routes.dart
 │   └── theme.dart
 ├── models/
-│   └── splendor/
+│   ├── api_models.dart
+│   ├── splendor_action_models.dart
+│   ├── splendor_base_models.dart
+│   ├── splendor_catalog_models.dart
+│   ├── splendor_models.dart
+│   ├── splendor_session_models.dart
+│   └── splendor_state_models.dart
 ├── pages/
 │   ├── index/
 │   │   └── index_page.dart
@@ -48,15 +60,257 @@ frontend/lib/
 说明：
 
 - `main.dart`：Flutter 进程入口，只做启动前配置和挂载 App。
+- `api/`：全项目 API 调用统一目录，按接口域拆文件，但不放进页面或模块子目录。
 - `app/`：App 级配置，包括 App 外壳、路由、主题和颜色表。
-- `models/`：纯数据模型，按游戏或模块拆分，不依赖页面。
+- `models/`：全项目数据模型统一目录，按接口域拆文件，但不放进页面或模块子目录。
 - `pages/`：页面、页面 Controller、页面内部组件，按页面或游戏拆分。
 - `services/`：业务服务、规则服务、固定数据、状态推进逻辑。
 - `shared/`：确认跨页面或跨游戏复用的网络、widget 和工具。
 
-`models/splendor/`、`pages/splendor/`、`services/splendor/` 是后续璀璨宝石对局实现位置。创建这些文件时要继续补全本索引。
+`pages/splendor/`、`services/splendor/` 是后续璀璨宝石页面和本地业务编排实现位置。API 调用仍放在 `api/`，数据模型仍放在 `models/`。
+
+架构约束：
+
+- API 调用文件统一放在 `frontend/lib/api/`。
+- 数据模型统一放在 `frontend/lib/models/`。
+- 不要创建 `pages/xxx/api`、`pages/xxx/models`、`services/xxx/models` 这类分散目录。
+- 如果某个 API/model 文件过大，优先在 `api/` 或 `models/` 下拆同级文件，而不是移动到模块目录。
+
+备注要求：
+
+- 新增或修改 API 文件、API 方法、model 文件、核心 model 类、页面组件、widget、公共功能方法、核心业务方法时，必须有最基本的备注信息。
+- 备注至少说明“这个东西做什么”，必要时补充输入、输出、对应接口或使用场景。
+- 对外公开的类和方法优先用 `///` 文档注释；文件顶部或私有局部逻辑可用普通注释。
+- 注释要帮助阅读，不写空话。例如不要写“返回数据”“设置属性”，应写“创建本地同屏璀璨宝石对局并返回后端 GameState 快照”。
+- 如果一个文件只是 barrel export，也要注明它导出了哪些模型组、什么时候该 import 它。
+
+### `frontend/lib/api/api_config.dart`
+
+职责：
+
+- 统一维护 API 基础配置。
+- 当前提供 `ApiConfig.defaultBaseUrl`。
+
+核心类：
+
+- `ApiConfig`
+
+核心成员：
+
+- `defaultBaseUrl`：默认后端地址，支持通过 `--dart-define=API_BASE_URL=...` 覆盖。
+
+用法：
+
+```dart
+final apiClient = ApiClient(baseUrl: ApiConfig.defaultBaseUrl);
+```
+
+真机联调：
+
+- Android/iOS 真机不能使用电脑本机的 `127.0.0.1` 访问后端。
+- 后端服务监听 `0.0.0.0:3000` 时，真机应使用电脑局域网 IP，例如 `http://192.168.110.137:3000`。
+- 如局域网 IP 变化，运行 Flutter 时传入：
+
+```text
+--dart-define=API_BASE_URL=http://你的电脑局域网IP:3000
+```
+
+### `frontend/lib/api/api_paths.dart`
+
+职责：
+
+- 统一维护 API path 字符串。
+- 负责拼接带路径参数的接口地址。
+- 让接口路径集中可查，同时让 `SplendorApi` 继续封装具体请求方法。
+
+核心类：
+
+- `ApiPaths`
+
+核心成员和方法：
+
+- `health`：`/health`。
+- `splendorCatalog`：`/api/splendor/catalog`。
+- `splendorSessions`：`/api/splendor/sessions`。
+- `splendorSession(String sessionId)`：单局对局详情路径。
+- `splendorLegalActions(String sessionId)`：当前合法行动路径。
+- `splendorActions(String sessionId)`：提交行动和行动历史路径。
+
+用法：
+
+```dart
+final path = ApiPaths.splendorActions(sessionId);
+```
+
+维护规则：
+
+- 新增接口时先在 `ApiPaths` 登记 path。
+- API 调用方法从 `ApiPaths` 取 path，不在方法里直接写字符串。
+
+### `frontend/lib/api/splendor_api.dart`
+
+职责：
+
+- 统一封装璀璨宝石 V1 后端接口。
+- 不写 UI 状态，不写页面交互，不写游戏规则。
+- 通过 `ApiClient` 发请求，并把响应转成 `models/splendor_models.dart` 中的数据模型。
+
+核心类：
+
+- `SplendorApi`
+
+核心方法：
+
+- `health()`：调用 `GET /health`。
+- `getCatalog()`：调用 `GET /api/splendor/catalog`。
+- `createSession(SplendorCreateSessionInput input)`：调用 `POST /api/splendor/sessions`。
+- `getSession(String sessionId)`：调用 `GET /api/splendor/sessions/:sessionId`。
+- `getLegalActions(String sessionId)`：调用 `GET /api/splendor/sessions/:sessionId/legal-actions`。
+- `submitAction(String sessionId, SplendorSubmitActionInput input)`：调用 `POST /api/splendor/sessions/:sessionId/actions`。
+- `getActions(String sessionId)`：调用 `GET /api/splendor/sessions/:sessionId/actions`。
+
+用法：
+
+```dart
+final splendorApi = SplendorApi();
+final catalog = await splendorApi.getCatalog();
+```
+
+维护规则：
+
+- 页面和 Controller 不要直接拼 URL。
+- 接口路径统一从 `ApiPaths` 读取。
+- 璀璨宝石相关后端接口优先补到 `SplendorApi`。
+- 如果后端错误返回 `error.code/message`，由 API 层转换为 `ApiException`。
 
 ## 文件职责
+
+### `frontend/lib/models/api_models.dart`
+
+职责：
+
+- 统一维护通用 API 错误模型。
+
+核心类：
+
+- `ApiError`：后端错误结构，包含 `code` 和 `message`。
+- `ApiException`：API 层抛出的统一异常。
+
+用法：
+
+```dart
+try {
+  await splendorApi.getCatalog();
+} on ApiException catch (error) {
+  // error.error.code / error.error.message
+}
+```
+
+### `frontend/lib/models/splendor_base_models.dart`
+
+职责：
+
+- 维护璀璨宝石模型共用基础类型。
+- 包含枚举、宝石集合、JSON 辅助解析方法。
+
+核心模型：
+
+- `JsonMap`
+- `SplendorPlayerType`
+- `SplendorSessionStatus`
+- `SplendorActionType`
+- `SplendorTokenSet`
+- `SplendorGemSet`
+
+### `frontend/lib/models/splendor_catalog_models.dart`
+
+职责：
+
+- 对齐 `GET /api/splendor/catalog`。
+- 维护固定 catalog 响应模型。
+
+核心模型：
+
+- `SplendorCatalogResponse`
+- `SplendorCard`
+- `SplendorNoble`
+
+### `frontend/lib/models/splendor_state_models.dart`
+
+职责：
+
+- 维护后端 `SplendorGameState` JSON 快照模型。
+- 被 session、action、legal-actions 等响应复用。
+
+核心模型：
+
+- `SplendorGameState`
+- `SplendorPlayerState`
+- `SplendorPendingAction`
+- `SplendorCardArea`
+- `SplendorFinalRound`
+
+### `frontend/lib/models/splendor_session_models.dart`
+
+职责：
+
+- 对齐创建对局和获取对局接口。
+
+核心模型：
+
+- `SplendorCreateSessionInput`
+- `SplendorCreatePlayerInput`
+- `SplendorSessionResponse`
+- `SplendorSession`
+- `SplendorSeatPlayer`
+
+### `frontend/lib/models/splendor_action_models.dart`
+
+职责：
+
+- 对齐合法行动、提交行动、行动历史接口。
+
+核心模型：
+
+- `SplendorAction`
+- `SplendorSubmitActionInput`
+- `SplendorLegalActionsResponse`
+- `SplendorLegalAction`
+- `SplendorSubmitActionResponse`
+- `SplendorActionRecord`
+- `SplendorActionsResponse`
+
+### `frontend/lib/models/splendor_models.dart`
+
+职责：
+
+- 作为璀璨宝石模型 barrel export。
+- 调用方需要多个模型组时，可以统一 import 这个文件。
+- 调用方只需要一个模型组时，也可以 import 对应拆分文件。
+
+核心模型：
+
+- 导出 `splendor_base_models.dart`。
+- 导出 `splendor_catalog_models.dart`。
+- 导出 `splendor_state_models.dart`。
+- 导出 `splendor_session_models.dart`。
+- 导出 `splendor_action_models.dart`。
+
+用法：
+
+```dart
+final state = SplendorGameState.fromJson(json);
+final action = SplendorAction.takeTokens(
+  const SplendorTokenSet(white: 1, blue: 1, green: 1),
+);
+```
+
+维护规则：
+
+- 后端响应字段变化时，优先更新这里。
+- 不要在页面中临时解析 `Map<String, dynamic>`。
+- 不要在模块目录下创建重复的 Splendor model。
+- 如果单个模型文件过大，在 `frontend/lib/models/` 下继续拆同级文件，不移动到模块目录。
 
 ### `frontend/lib/main.dart`
 
@@ -481,6 +735,10 @@ class SplendorRemoteService {
 复用说明：
 
 - ...
+
+备注情况：
+
+- 文件、核心类、核心方法是否已经写明用途。
 ```
 
 新增可复用 widget 时，在“当前可复用 Widget”补：
@@ -499,6 +757,8 @@ class SplendorRemoteService {
 不适合复用场景：
 
 示例：
+
+备注情况：
 ```
 
 ## 近期前端落点

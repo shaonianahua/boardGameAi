@@ -1,0 +1,278 @@
+// 璀璨宝石行动请求和响应模型。
+// 用于合法行动、提交行动、行动历史接口。
+import 'splendor_base_models.dart';
+import 'splendor_session_models.dart';
+import 'splendor_state_models.dart';
+
+/// 玩家一次可提交或后端返回的璀璨宝石行动。
+///
+/// `payload` 保留后端 action 原始结构，方便不同 action 类型携带不同字段。
+class SplendorAction {
+  /// 内部构造方法，统一保存行动类型和原始 payload。
+  const SplendorAction._(this.type, this.payload);
+
+  /// 从后端 action JSON 解析行动。
+  factory SplendorAction.fromJson(JsonMap json) {
+    return SplendorAction._(
+      SplendorActionType.fromJson(json['type'] as String?),
+      Map<String, dynamic>.from(json),
+    );
+  }
+
+  /// 构造“拿取 token”行动。
+  factory SplendorAction.takeTokens(SplendorTokenSet tokens) {
+    return SplendorAction._(SplendorActionType.takeTokens, {
+      'type': SplendorActionType.takeTokens.value,
+      'tokens': tokens.toJson(includeZero: false),
+    });
+  }
+
+  /// 构造“预留卡牌”行动。
+  ///
+  /// `source` 用于区分公开市场或牌堆；从牌堆预留时 `cardId` 可以为空。
+  factory SplendorAction.reserveCard({
+    required String source,
+    required int level,
+    String? cardId,
+  }) {
+    return SplendorAction._(SplendorActionType.reserveCard, {
+      'type': SplendorActionType.reserveCard.value,
+      'source': source,
+      'level': level,
+      'cardId': ?cardId,
+    });
+  }
+
+  /// 构造“购买卡牌”行动。
+  ///
+  /// `payment` 可由前端显式传入，也可交给后端按规则计算，取决于后续 UI 设计。
+  factory SplendorAction.buyCard({
+    required String source,
+    required String cardId,
+    SplendorTokenSet? payment,
+  }) {
+    return SplendorAction._(SplendorActionType.buyCard, {
+      'type': SplendorActionType.buyCard.value,
+      'source': source,
+      'cardId': cardId,
+      'payment': ?payment?.toJson(includeZero: false),
+    });
+  }
+
+  /// 构造“弃 token”行动，用于处理超过 10 个 token 的挂起状态。
+  factory SplendorAction.discardTokens(SplendorTokenSet tokens) {
+    return SplendorAction._(SplendorActionType.discardTokens, {
+      'type': SplendorActionType.discardTokens.value,
+      'tokens': tokens.toJson(includeZero: false),
+    });
+  }
+
+  /// 构造“选择贵族”行动，用于处理同时满足多个贵族的挂起状态。
+  factory SplendorAction.chooseNoble(String nobleId) {
+    return SplendorAction._(SplendorActionType.chooseNoble, {
+      'type': SplendorActionType.chooseNoble.value,
+      'nobleId': nobleId,
+    });
+  }
+
+  /// 行动类型。
+  final SplendorActionType type;
+
+  /// 行动原始字段，提交接口时直接作为 action JSON。
+  final JsonMap payload;
+
+  /// 转成提交行动接口需要的 action JSON。
+  JsonMap toJson() => payload;
+}
+
+/// `POST /api/splendor/sessions/:sessionId/actions` 的请求体。
+class SplendorSubmitActionInput {
+  /// 构造提交行动请求体。
+  const SplendorSubmitActionInput({
+    required this.playerIndex,
+    required this.action,
+    this.actorType,
+  });
+
+  /// 执行动作的玩家下标。
+  final int playerIndex;
+
+  /// 具体行动内容。
+  final SplendorAction action;
+
+  /// 行动发起方类型，后续区分 human/bot/ai 时使用。
+  final String? actorType;
+
+  /// 转成提交行动接口请求 JSON。
+  JsonMap toJson() {
+    return {
+      'playerIndex': playerIndex,
+      'actorType': ?actorType,
+      'action': action.toJson(),
+    };
+  }
+}
+
+/// 后端返回的一条当前合法行动。
+class SplendorLegalAction {
+  /// 构造合法行动展示项。
+  const SplendorLegalAction({required this.action, required this.label});
+
+  /// 从 legal-actions 响应中的单项 JSON 解析。
+  factory SplendorLegalAction.fromJson(JsonMap json) {
+    return SplendorLegalAction(
+      action: SplendorAction.fromJson(json['action'] as JsonMap),
+      label: json['label'] as String,
+    );
+  }
+
+  /// 可提交的行动内容。
+  final SplendorAction action;
+
+  /// 后端给出的行动说明，供 UI 展示或调试使用。
+  final String label;
+}
+
+/// `GET /api/splendor/sessions/:sessionId/legal-actions` 的响应体。
+class SplendorLegalActionsResponse {
+  /// 构造合法行动响应。
+  const SplendorLegalActionsResponse({
+    required this.playerIndex,
+    required this.pendingAction,
+    required this.actions,
+    required this.disabledReasons,
+  });
+
+  /// 从 legal-actions 响应 JSON 解析。
+  factory SplendorLegalActionsResponse.fromJson(JsonMap json) {
+    return SplendorLegalActionsResponse(
+      playerIndex: json['playerIndex'] as int,
+      pendingAction: json['pendingAction'] == null
+          ? null
+          : SplendorPendingAction.fromJson(json['pendingAction'] as JsonMap),
+      actions: objectList(json['actions'], SplendorLegalAction.fromJson),
+      disabledReasons: stringList(json['disabledReasons']),
+    );
+  }
+
+  /// 当前应该行动或处理挂起行动的玩家下标。
+  final int playerIndex;
+
+  /// 当前必须优先处理的挂起行动，没有时为空。
+  final SplendorPendingAction? pendingAction;
+
+  /// 后端判定当前可执行的行动列表。
+  final List<SplendorLegalAction> actions;
+
+  /// 无法行动或行动受限的原因列表，供 UI 禁用提示使用。
+  final List<String> disabledReasons;
+}
+
+/// 后端保存的一条对局操作记录。
+class SplendorActionRecord {
+  /// 构造行动历史记录。
+  const SplendorActionRecord({
+    required this.id,
+    required this.sessionId,
+    required this.turnIndex,
+    required this.playerIndex,
+    required this.actorType,
+    required this.actionType,
+    required this.action,
+    required this.stateBefore,
+    required this.stateAfter,
+    required this.createdAt,
+  });
+
+  /// 从 action-history JSON 解析行动记录。
+  factory SplendorActionRecord.fromJson(JsonMap json) {
+    return SplendorActionRecord(
+      id: json['id'] as String,
+      sessionId: json['sessionId'] as String,
+      turnIndex: json['turnIndex'] as int,
+      playerIndex: json['playerIndex'] as int,
+      actorType: json['actorType'] as String,
+      actionType: json['actionType'] as String,
+      action: SplendorAction.fromJson(json['action'] as JsonMap),
+      stateBefore: SplendorGameState.fromJson(json['stateBefore'] as JsonMap),
+      stateAfter: SplendorGameState.fromJson(json['stateAfter'] as JsonMap),
+      createdAt: DateTime.parse(json['createdAt'] as String),
+    );
+  }
+
+  /// 行动记录 ID。
+  final String id;
+
+  /// 所属对局 ID。
+  final String sessionId;
+
+  /// 行动发生时的回合序号。
+  final int turnIndex;
+
+  /// 执行动作的玩家下标。
+  final int playerIndex;
+
+  /// 行动发起方类型，例如 human/bot。
+  final String actorType;
+
+  /// 后端记录的行动类型字符串。
+  final String actionType;
+
+  /// 行动内容。
+  final SplendorAction action;
+
+  /// 行动执行前的状态快照。
+  final SplendorGameState stateBefore;
+
+  /// 行动执行后的状态快照。
+  final SplendorGameState stateAfter;
+
+  /// 行动记录创建时间。
+  final DateTime createdAt;
+}
+
+/// 提交行动接口响应。
+class SplendorSubmitActionResponse {
+  /// 构造提交行动响应，包含更新后的 session、行动记录和状态。
+  const SplendorSubmitActionResponse({
+    required this.session,
+    required this.actionRecord,
+    required this.state,
+  });
+
+  /// 从 `POST /api/splendor/sessions/:sessionId/actions` 响应 JSON 解析。
+  factory SplendorSubmitActionResponse.fromJson(JsonMap json) {
+    return SplendorSubmitActionResponse(
+      session: SplendorSession.fromJson(json['session'] as JsonMap),
+      actionRecord: SplendorActionRecord.fromJson(
+        json['actionRecord'] as JsonMap,
+      ),
+      state: SplendorGameState.fromJson(json['state'] as JsonMap),
+    );
+  }
+
+  /// 更新后的对局元信息。
+  final SplendorSession session;
+
+  /// 本次提交生成的行动记录。
+  final SplendorActionRecord actionRecord;
+
+  /// 行动执行后的游戏状态快照。
+  final SplendorGameState state;
+}
+
+/// 行动历史接口响应。
+class SplendorActionsResponse {
+  /// 构造行动历史响应。
+  const SplendorActionsResponse({required this.actions});
+
+  /// 从 `GET /api/splendor/sessions/:sessionId/actions` 响应 JSON 解析。
+  factory SplendorActionsResponse.fromJson(JsonMap json) {
+    return SplendorActionsResponse(
+      actions: objectList(json['actions'], SplendorActionRecord.fromJson),
+    );
+  }
+
+  /// 当前对局的历史行动记录列表。
+  final List<SplendorActionRecord> actions;
+}
