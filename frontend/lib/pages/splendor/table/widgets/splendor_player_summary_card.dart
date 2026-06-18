@@ -52,11 +52,26 @@ class SplendorPlayerSummaryCard extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: Text(
-                  player.name,
-                  style: textTheme.bodyLarge?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
+                child: Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        player.name,
+                        overflow: TextOverflow.ellipsis,
+                        style: textTheme.bodyLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    if (player.type == SplendorPlayerType.bot) ...[
+                      SizedBox(width: 6.w),
+                      Icon(
+                        Icons.smart_toy_rounded,
+                        size: 15.w,
+                        color: colorScheme.primary,
+                      ),
+                    ],
+                  ],
                 ),
               ),
               Text(

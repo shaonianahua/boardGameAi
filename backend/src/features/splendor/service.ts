@@ -1,5 +1,6 @@
 import type { GameAction, GamePlayer, GameSession, Prisma } from '@prisma/client';
 import { prisma } from '../../db/prisma.js';
+import { chooseSplendorBotAction } from './bot-advisor.js';
 import { actionType, applySplendorAction, generateSplendorLegalActions } from './rules.js';
 import { createInitialSplendorState, parseState, stringifyState } from './state.js';
 import type {
@@ -41,6 +42,17 @@ export interface PublicActionRecord {
   stateBefore: SplendorGameState;
   stateAfter: SplendorGameState;
   createdAt: Date;
+}
+
+export interface SplendorBotActionResponse {
+  session: PublicSession;
+  actionRecord: PublicActionRecord;
+  state: SplendorGameState;
+  decision: {
+    score: number;
+    reason: string;
+    selectedAction: SplendorAction;
+  };
 }
 
 type GameSessionWithPlayers = Prisma.GameSessionGetPayload<{
@@ -235,6 +247,34 @@ export async function submitSplendorAction(
     session: publicSession(session),
     actionRecord: publicAction(actionRecord),
     state: afterState,
+  };
+}
+
+export async function actSplendorBot(sessionId: string): Promise<SplendorBotActionResponse> {
+  const existing = await getSplendorSession(sessionId);
+  const currentPlayer = existing.state.players[existing.state.currentPlayerIndex];
+  if (!currentPlayer) {
+    throw new Error('current player not found');
+  }
+  if (currentPlayer.type !== 'bot') {
+    throw new Error('current player is not a bot');
+  }
+
+  const legalActions = generateSplendorLegalActions(existing.state);
+  const decision = chooseSplendorBotAction(existing.state, legalActions);
+  const result = await submitSplendorAction(sessionId, {
+    playerIndex: legalActions.playerIndex,
+    actorType: 'bot',
+    action: decision.legalAction.action,
+  });
+
+  return {
+    ...result,
+    decision: {
+      score: decision.score,
+      reason: decision.reason,
+      selectedAction: decision.legalAction.action,
+    },
   };
 }
 

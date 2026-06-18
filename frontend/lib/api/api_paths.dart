@@ -27,4 +27,9 @@ class ApiPaths {
   static String splendorActions(String sessionId) {
     return '${splendorSession(sessionId)}/actions';
   }
+
+  /// V2 本地 Bot 自动行动接口，后端会为当前 Bot 玩家选择并执行一个合法行动。
+  static String splendorBotAct(String sessionId) {
+    return '${splendorSession(sessionId)}/bot/act';
+  }
 }

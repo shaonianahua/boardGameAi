@@ -136,6 +136,11 @@ services/
 - `splendor_action_generator.dart`：根据当前状态枚举合法行动。
 - `splendor_ai_service.dart`：本地启发式 AI，基于合法行动评分，不调用大模型。
 
+当前后端 V2 已新增：
+
+- `backend/src/features/splendor/bot-advisor.ts`：本地 Bot 启发式策略，从后端合法行动列表中选择行动，不直接修改 `GameState`。
+- `POST /api/splendor/sessions/:sessionId/bot/act`：当前玩家是 Bot 时自动选择并执行一个合法行动；行动仍通过规则引擎校验和记录。
+
 ### `lib/shared/`
 
 真正跨页面、跨游戏复用的内容。

@@ -13,6 +13,7 @@ class LegalActionsPanel extends StatelessWidget {
     required this.legalActions,
     required this.currentPlayer,
     required this.isSubmitting,
+    required this.isActingBot,
     required this.isLoading,
     required this.onSubmit,
     super.key,
@@ -27,6 +28,9 @@ class LegalActionsPanel extends StatelessWidget {
   /// 行动是否正在提交。
   final bool isSubmitting;
 
+  /// 当前是否正在等待 Bot 自动行动。
+  final bool isActingBot;
+
   /// 合法行动是否加载中。
   final bool isLoading;
 
@@ -39,6 +43,26 @@ class LegalActionsPanel extends StatelessWidget {
   }
 
   Widget _buildContent(BuildContext context) {
+    if (isActingBot) {
+      return Row(
+        children: [
+          const SizedBox.square(
+            dimension: 16,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              '${currentPlayer.name} 正在思考行动。',
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      );
+    }
+
     if (isLoading) {
       return const LinearProgressIndicator();
     }

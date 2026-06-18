@@ -1,4 +1,4 @@
-# V1 后端实现说明
+# V1/V2 后端实现说明
 
 版本：2026-06-17
 
@@ -16,6 +16,7 @@
 - 查询行动历史。
 - 保存当前 `GameState` 快照。
 - 保存每一步行动的前后状态快照。
+- V2 已新增本地 Bot 启发式行动接口。
 
 当前后端用于建立前后端接口契约和存档能力，不承担线上联机能力。
 
@@ -34,6 +35,7 @@ backend/
     └── features/
         └── splendor/
             ├── catalog.ts
+            ├── bot-advisor.ts
             ├── routes.ts
             ├── rules.ts
             ├── service.ts
@@ -46,6 +48,7 @@ backend/
 - `server.ts`：Fastify 服务入口，注册健康检查和璀璨宝石接口。
 - `db/prisma.ts`：PrismaClient 单例。
 - `features/splendor/catalog.ts`：璀璨宝石固定卡牌和贵族数据。
+- `features/splendor/bot-advisor.ts`：V2 本地 Bot 启发式策略，只从合法行动列表中选择行动，不直接修改状态。
 - `features/splendor/types.ts`：GameState、Action、玩家、卡牌等 TypeScript 类型。
 - `features/splendor/state.ts`：创建初始对局状态、状态序列化和反序列化。
 - `features/splendor/rules.ts`：行动合法性校验和状态推进。
@@ -178,6 +181,26 @@ GET /api/splendor/sessions/:sessionId/actions
 - 玩家提交行动会记录为 `human` / `bot` / `llm` 等 actorType。
 - 自动获得贵族会追加 `actorType: system`、`action.type: noble_visit` 的系统行动记录，方便前端和后续 AI 回看完整过程。
 
+### Bot 自动行动
+
+```text
+POST /api/splendor/sessions/:sessionId/bot/act
+```
+
+用途：
+
+- 只在当前行动玩家 `type === bot` 时可调用。
+- 后端读取当前 `GameState`，生成合法行动，再由 `bot-advisor.ts` 选择一个行动。
+- 选中的行动仍通过 `submitSplendorAction` 和规则引擎执行，保证 Bot 不绕过规则。
+- 如果行动后进入弃宝石 pending，前端会再次调用该接口，让 Bot 自动从合法弃宝石行动中选择一个。
+
+返回：
+
+- `session`：更新后的对局摘要。
+- `actionRecord`：Bot 本次行动记录，`actorType` 为 `bot`。
+- `state`：更新后的完整 `GameState`。
+- `decision`：本地 Bot 启发式评分、原因和选中的行动。
+
 ## 当前规则能力
 
 已实现：
@@ -204,11 +227,12 @@ GET /api/splendor/sessions/:sessionId/actions
 
 当前测试：
 
-- `src/features/splendor/__tests__/rules.test.ts` 覆盖初始合法行动、公共池只剩两色时拿两个不同色、10 个 token 开始拿宝石后弃牌、弃宝石 pending、多贵族自动获得、自动贵族历史事件识别和终局轮结算。
+- `src/features/splendor/__tests__/rules.test.ts` 覆盖初始合法行动、公共池只剩两色时拿两个不同色、10 个 token 开始拿宝石后弃牌、弃宝石 pending、多贵族自动获得、自动贵族历史事件识别、终局轮结算，以及 Bot 启发式选择购买得分卡和弃宝石行动。
 
 当前限制：
 
-- 没有实现 Bot 或 AI 决策接口。
+- 已实现本地 Bot 自动行动接口，但策略仍是 V2 第一版启发式，不代表最优策略。
+- 没有实现云端 AI 建议接口。
 
 这些限制不影响 V1 后端接口骨架，但前端开发前需要逐项补齐或明确交互方式。
 

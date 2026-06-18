@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { chooseSplendorBotAction } from '../bot-advisor.js';
 import { applySplendorAction, generateSplendorLegalActions } from '../rules.js';
 import { automaticSplendorActions } from '../service.js';
 import { createInitialSplendorState } from '../state.js';
@@ -314,4 +315,96 @@ test('finishes the game only after remaining players complete the final round', 
   assert.equal(afterPlayerFour.status, 'finished');
   assert.equal(afterPlayerFour.winnerPlayerIndex, 1);
   assert.equal(afterPlayerFour.currentPlayerIndex, 3);
+});
+
+test('bot advisor prefers buying a scoring card when legal', () => {
+  const state = createTwoPlayerState();
+  const scoringState: SplendorGameState = {
+    ...state,
+    markets: {
+      ...state.markets,
+      level1: ['dev-1-013'],
+    },
+    decks: {
+      ...state.decks,
+      level1: [],
+    },
+    players: state.players.map((player, index) =>
+      index === 0
+        ? {
+            ...player,
+            type: 'bot',
+            tokens: {
+              white: 0,
+              blue: 0,
+              green: 0,
+              red: 4,
+              black: 0,
+              gold: 0,
+            },
+          }
+        : player,
+    ),
+  };
+
+  const legalActions = generateSplendorLegalActions(scoringState);
+  const decision = chooseSplendorBotAction(scoringState, legalActions);
+
+  assert.equal(decision.legalAction.action.type, 'buy_card');
+  assert.equal(decision.legalAction.action.cardId, 'dev-1-013');
+});
+
+test('bot advisor prefers taking tokens over early blind reservation', () => {
+  const state = createTwoPlayerState();
+  const botState: SplendorGameState = {
+    ...state,
+    players: state.players.map((player, index) =>
+      index === 0
+        ? {
+            ...player,
+            type: 'bot',
+          }
+        : player,
+    ),
+  };
+
+  const legalActions = generateSplendorLegalActions(botState);
+  const decision = chooseSplendorBotAction(botState, legalActions);
+
+  assert.equal(decision.legalAction.action.type, 'take_tokens');
+});
+
+test('bot advisor can choose a discard action for pending token overflow', () => {
+  const state = createTwoPlayerState();
+  const pendingState: SplendorGameState = {
+    ...state,
+    pendingAction: {
+      type: 'discard_tokens',
+      playerIndex: 0,
+      tokenCount: 11,
+      maxTokenCount: 10,
+    },
+    players: state.players.map((player, index) =>
+      index === 0
+        ? {
+            ...player,
+            type: 'bot',
+            tokens: {
+              white: 2,
+              blue: 2,
+              green: 2,
+              red: 2,
+              black: 2,
+              gold: 1,
+            },
+          }
+        : player,
+    ),
+  };
+
+  const legalActions = generateSplendorLegalActions(pendingState);
+  const decision = chooseSplendorBotAction(pendingState, legalActions);
+
+  assert.equal(decision.legalAction.action.type, 'discard_tokens');
+  assert.notEqual(decision.legalAction.action.tokens.gold, 1);
 });

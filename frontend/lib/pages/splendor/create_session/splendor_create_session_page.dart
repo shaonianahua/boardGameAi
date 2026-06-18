@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:get/get.dart';
 
+import '../../../models/splendor_models.dart';
 import 'controller/splendor_create_session_controller.dart';
 import 'player_count_selector.dart';
 
@@ -72,17 +73,13 @@ class _SplendorCreateSessionPageState extends State<SplendorCreateSessionPage> {
                 ) {
                   return Padding(
                     padding: EdgeInsets.only(bottom: 12.h),
-                    child: TextField(
-                      controller: controller.nameControllers[index],
-                      textInputAction: index == controller.playerCount.value - 1
-                          ? TextInputAction.done
-                          : TextInputAction.next,
-                      decoration: InputDecoration(
-                        labelText: '玩家 ${index + 1}',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
+                    child: _PlayerInputRow(
+                      index: index,
+                      nameController: controller.nameControllers[index],
+                      playerType: controller.playerTypes[index],
+                      isLast: index == controller.playerCount.value - 1,
+                      onTypeChanged: (type) =>
+                          controller.setPlayerType(index, type),
                     ),
                   );
                 }),
@@ -110,6 +107,73 @@ class _SplendorCreateSessionPageState extends State<SplendorCreateSessionPage> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// 创建对局页单个座位输入行，包含名称和真人/Bot 类型选择。
+class _PlayerInputRow extends StatelessWidget {
+  const _PlayerInputRow({
+    required this.index,
+    required this.nameController,
+    required this.playerType,
+    required this.isLast,
+    required this.onTypeChanged,
+  });
+
+  final int index;
+  final TextEditingController nameController;
+  final Rx<SplendorPlayerType> playerType;
+  final bool isLast;
+  final ValueChanged<SplendorPlayerType> onTypeChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TextField(
+          controller: nameController,
+          textInputAction: isLast ? TextInputAction.done : TextInputAction.next,
+          decoration: InputDecoration(
+            labelText: '玩家 ${index + 1}',
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+        ),
+        SizedBox(height: 8.h),
+        Obx(
+          () => SegmentedButton<SplendorPlayerType>(
+            segments: const [
+              ButtonSegment<SplendorPlayerType>(
+                value: SplendorPlayerType.human,
+                icon: Icon(Icons.person_rounded),
+                label: Text('真人'),
+              ),
+              ButtonSegment<SplendorPlayerType>(
+                value: SplendorPlayerType.bot,
+                icon: Icon(Icons.smart_toy_rounded),
+                label: Text('Bot'),
+              ),
+            ],
+            selected: {playerType.value},
+            showSelectedIcon: false,
+            onSelectionChanged: (values) {
+              final selected = values.firstOrNull;
+              if (selected != null) {
+                onTypeChanged(selected);
+              }
+            },
+            style: ButtonStyle(
+              visualDensity: VisualDensity.compact,
+              textStyle: WidgetStatePropertyAll(
+                Theme.of(
+                  context,
+                ).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w800),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

@@ -1,3 +1,5 @@
+import 'dart:developer' as developer;
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
@@ -45,12 +47,18 @@ class SplendorTableController extends GetxController {
   /// 行动提交中状态。
   final RxBool isSubmittingAction = false.obs;
 
+  /// Bot 自动行动中状态。
+  final RxBool isActingBot = false.obs;
+
+  bool _isAutoAdvancingBot = false;
+
   /// 初始化桌面页所需数据。
   void initialize(SplendorSessionResponse? initialSessionResponse) {
     sessionResponse.value = initialSessionResponse;
     loadCatalog();
     loadLegalActions();
     loadActionHistory();
+    _scheduleBotAutoAction();
   }
 
   /// 重新拉取 catalog，用于展示真实卡面信息。
@@ -82,6 +90,7 @@ class SplendorTableController extends GetxController {
       sessionResponse.value = await _splendorApi.getSession(sessionId);
       await loadLegalActions();
       await loadActionHistory();
+      _scheduleBotAutoAction();
     } on ApiException catch (error) {
       _showMessage(error.error.message);
     } catch (_) {
@@ -103,6 +112,7 @@ class SplendorTableController extends GetxController {
     try {
       final response = await _splendorApi.getLegalActions(sessionId);
       legalActions.value = response;
+      _scheduleBotAutoAction();
     } on ApiException catch (error) {
       _showMessage(error.error.message);
     } catch (_) {
@@ -184,7 +194,136 @@ class SplendorTableController extends GetxController {
       _showMessage('提交行动失败，请确认后端服务已启动');
     } finally {
       isSubmittingAction.value = false;
+      _scheduleBotAutoAction();
     }
+  }
+
+  /// 如果当前轮到 Bot，则延迟触发后端 Bot 自动行动。
+  ///
+  /// Bot 决策在后端完成，前端只负责在状态更新后继续检查下一个玩家是否仍是 Bot。
+  void _scheduleBotAutoAction() {
+    if (_isAutoAdvancingBot) {
+      return;
+    }
+    final response = sessionResponse.value;
+    if (response == null || !_shouldBotAct(response.state)) {
+      return;
+    }
+
+    _isAutoAdvancingBot = true;
+    Future<void>.delayed(const Duration(milliseconds: 600), () async {
+      var acted = false;
+      try {
+        acted = await actCurrentBot();
+      } finally {
+        _isAutoAdvancingBot = false;
+        if (acted) {
+          _scheduleBotAutoAction();
+        }
+      }
+    });
+  }
+
+  bool _shouldBotAct(SplendorGameState state) {
+    if (state.status != SplendorSessionStatus.active) {
+      return false;
+    }
+    if (isSubmittingAction.value || isActingBot.value) {
+      return false;
+    }
+    if (state.currentPlayerIndex < 0 ||
+        state.currentPlayerIndex >= state.players.length) {
+      return false;
+    }
+    return state.players[state.currentPlayerIndex].type ==
+        SplendorPlayerType.bot;
+  }
+
+  /// 调用后端让当前 Bot 玩家自动执行一个合法行动。
+  Future<bool> actCurrentBot() async {
+    final session = sessionResponse.value;
+    if (session == null || !_shouldBotAct(session.state)) {
+      developer.log(
+        'skip bot action: session=${session?.session.id}, '
+        'currentPlayer=${session?.state.currentPlayerIndex}, '
+        'currentType=${_currentPlayerTypeName(session?.state)}',
+        name: 'splendor.bot',
+      );
+      return false;
+    }
+
+    final beforeState = session.state;
+    final beforePlayer = beforeState.players[beforeState.currentPlayerIndex];
+    isActingBot.value = true;
+    developer.log(
+      'start bot action: session=${session.session.id}, '
+      'turn=${beforeState.currentTurnIndex}, '
+      'player=${beforePlayer.seatIndex}/${beforePlayer.name}, '
+      'pending=${beforeState.pendingAction?.type.value}',
+      name: 'splendor.bot',
+    );
+
+    try {
+      final response = await _splendorApi.actBot(session.session.id);
+      developer.log(
+        'bot action success: session=${session.session.id}, '
+        'selected=${response.decision.selectedAction.payload}, '
+        'reason=${response.decision.reason}, '
+        'nextPlayer=${response.state.currentPlayerIndex}',
+        name: 'splendor.bot',
+      );
+      sessionResponse.value = SplendorSessionResponse(
+        session: response.session,
+        players: session.players,
+        state: response.state,
+      );
+      _showMessage('${beforePlayer.name}：${response.decision.reason}');
+      _showAwardedNobleMessage(
+        playerBefore: beforePlayer,
+        playerAfter: response.state.players[beforePlayer.seatIndex],
+      );
+      _showFinalRoundMessage(
+        beforeState: beforeState,
+        afterState: response.state,
+      );
+      _showGameFinishedMessage(
+        beforeState: beforeState,
+        afterState: response.state,
+      );
+      await loadLegalActions();
+      await loadActionHistory();
+      return true;
+    } on ApiException catch (error) {
+      developer.log(
+        'bot action api error: code=${error.error.code}, '
+        'message=${error.error.message}, session=${session.session.id}',
+        name: 'splendor.bot',
+        error: error,
+      );
+      _showMessage(error.error.message);
+    } catch (error) {
+      developer.log(
+        'bot action unexpected error: session=${session.session.id}',
+        name: 'splendor.bot',
+        error: error,
+      );
+      _showMessage('Bot 行动失败：$error');
+    } finally {
+      isActingBot.value = false;
+      if (sessionResponse.value != null) {
+        _scheduleBotAutoAction();
+      }
+    }
+    return false;
+  }
+
+  String? _currentPlayerTypeName(SplendorGameState? state) {
+    if (state == null ||
+        state.currentPlayerIndex < 0 ||
+        state.currentPlayerIndex >= state.players.length) {
+      return null;
+    }
+    return state.players[state.currentPlayerIndex].type.name;
   }
 
   void _showMessage(String message) {

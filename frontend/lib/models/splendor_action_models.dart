@@ -263,6 +263,71 @@ class SplendorSubmitActionResponse {
   final SplendorGameState state;
 }
 
+/// 后端本地 Bot 自动行动接口返回的决策信息。
+class SplendorBotDecision {
+  /// 构造 Bot 决策信息，记录本地启发式选择的行动和简短理由。
+  const SplendorBotDecision({
+    required this.score,
+    required this.reason,
+    required this.selectedAction,
+  });
+
+  /// 从 `POST /bot/act` 响应中的 decision JSON 解析。
+  factory SplendorBotDecision.fromJson(JsonMap json) {
+    return SplendorBotDecision(
+      score: (json['score'] as num).toDouble(),
+      reason: json['reason'] as String? ?? 'Bot 已选择一个合法行动',
+      selectedAction: SplendorAction.fromJson(
+        json['selectedAction'] as JsonMap,
+      ),
+    );
+  }
+
+  /// 本地启发式评分，用于调试或后续展示 Bot 思路。
+  final double score;
+
+  /// Bot 选择该行动的简短原因。
+  final String reason;
+
+  /// Bot 最终提交给后端规则引擎的行动。
+  final SplendorAction selectedAction;
+}
+
+/// Bot 自动行动接口响应，结构与提交行动响应一致，并额外携带决策说明。
+class SplendorBotActionResponse {
+  /// 构造 Bot 自动行动响应。
+  const SplendorBotActionResponse({
+    required this.session,
+    required this.actionRecord,
+    required this.state,
+    required this.decision,
+  });
+
+  /// 从 `POST /api/splendor/sessions/:sessionId/bot/act` 响应 JSON 解析。
+  factory SplendorBotActionResponse.fromJson(JsonMap json) {
+    return SplendorBotActionResponse(
+      session: SplendorSession.fromJson(json['session'] as JsonMap),
+      actionRecord: SplendorActionRecord.fromJson(
+        json['actionRecord'] as JsonMap,
+      ),
+      state: SplendorGameState.fromJson(json['state'] as JsonMap),
+      decision: SplendorBotDecision.fromJson(json['decision'] as JsonMap),
+    );
+  }
+
+  /// 更新后的对局元信息。
+  final SplendorSession session;
+
+  /// Bot 本次行动生成的历史记录。
+  final SplendorActionRecord actionRecord;
+
+  /// 行动执行后的完整游戏状态。
+  final SplendorGameState state;
+
+  /// 本地 Bot 启发式决策说明。
+  final SplendorBotDecision decision;
+}
+
 /// 行动历史接口响应。
 class SplendorActionsResponse {
   /// 构造行动历史响应。

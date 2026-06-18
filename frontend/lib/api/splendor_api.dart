@@ -1,3 +1,5 @@
+import 'dart:developer' as developer;
+
 import 'package:dio/dio.dart';
 
 import '../models/api_models.dart';
@@ -80,6 +82,49 @@ class SplendorApi {
     return SplendorActionsResponse.fromJson(_data(response));
   }
 
+  /// 调用 `POST /api/splendor/sessions/:sessionId/bot/act` 让当前 Bot 玩家自动行动。
+  ///
+  /// 后端负责从合法行动中选择并执行，前端只接收更新后的状态和 Bot 决策说明。
+  Future<SplendorBotActionResponse> actBot(String sessionId) async {
+    final response = await _request(
+      () => _apiClient.post<Map<String, dynamic>>(
+        ApiPaths.splendorBotAct(sessionId),
+        data: const <String, dynamic>{},
+      ),
+    );
+    return SplendorBotActionResponse.fromJson(_data(response));
+  }
+
+  /// 包装 Dio 请求，把后端非 2xx 错误体里的 `{ error }` 转成 `ApiException`。
+  Future<Response<Map<String, dynamic>>> _request(
+    Future<Response<Map<String, dynamic>>> Function() request,
+  ) async {
+    try {
+      return await request();
+    } on DioException catch (error) {
+      final data = error.response?.data;
+      developer.log(
+        'Dio request failed: status=${error.response?.statusCode}, '
+        'type=${error.type}, data=$data',
+        name: 'splendor.api',
+        error: error,
+        stackTrace: error.stackTrace,
+      );
+      if (data is Map<String, dynamic>) {
+        final apiError = _errorFromData(data);
+        if (apiError != null) {
+          throw ApiException(apiError);
+        }
+      }
+      throw ApiException(
+        ApiError(
+          code: error.type.name.toUpperCase(),
+          message: error.message ?? 'network request failed',
+        ),
+      );
+    }
+  }
+
   /// 提取后端响应体，并把 `{ error: { code, message } }` 转成 `ApiException`。
   Map<String, dynamic> _data(Response<Map<String, dynamic>> response) {
     final data = response.data;
@@ -95,5 +140,13 @@ class SplendorApi {
     }
 
     return data;
+  }
+
+  ApiError? _errorFromData(Map<String, dynamic> data) {
+    final error = data['error'];
+    if (error is Map<String, dynamic>) {
+      return ApiError.fromJson(error);
+    }
+    return null;
   }
 }

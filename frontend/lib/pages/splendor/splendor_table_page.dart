@@ -120,7 +120,9 @@ class _SplendorTablePageState extends State<SplendorTablePage> {
                       isLoadingCatalog: controller.isLoadingCatalog.value,
                       onCardSelected: _showCardActions,
                       legalActions: controller.legalActions.value,
-                      isSubmitting: controller.isSubmittingAction.value,
+                      isSubmitting:
+                          controller.isSubmittingAction.value ||
+                          controller.isActingBot.value,
                       onSubmit: controller.submitLegalAction,
                     ),
                     SizedBox(height: 8.h),
@@ -129,7 +131,9 @@ class _SplendorTablePageState extends State<SplendorTablePage> {
                       legalActions: controller.legalActions.value,
                       isLoadingLegalActions:
                           controller.isLoadingLegalActions.value,
-                      isSubmitting: controller.isSubmittingAction.value,
+                      isSubmitting:
+                          controller.isSubmittingAction.value ||
+                          controller.isActingBot.value,
                       onSubmit: controller.submitLegalAction,
                     ),
                     SizedBox(height: 8.h),
@@ -146,6 +150,7 @@ class _SplendorTablePageState extends State<SplendorTablePage> {
                           .players[response.state.currentPlayerIndex],
                       pendingAction:
                           controller.legalActions.value?.pendingAction,
+                      isActingBot: controller.isActingBot.value,
                     ),
                     SizedBox(height: 8.h),
                     SplendorGameResultPanel(state: response.state),
@@ -164,7 +169,10 @@ class _SplendorTablePageState extends State<SplendorTablePage> {
                     LegalActionsPanel(
                       legalActions: legalActions,
                       currentPlayer: response.state.players[actingPlayerIndex],
-                      isSubmitting: controller.isSubmittingAction.value,
+                      isSubmitting:
+                          controller.isSubmittingAction.value ||
+                          controller.isActingBot.value,
+                      isActingBot: controller.isActingBot.value,
                       isLoading: controller.isLoadingLegalActions.value,
                       onSubmit: controller.submitLegalAction,
                     ),
@@ -400,13 +408,26 @@ class _CompactOpponentCard extends StatelessWidget {
               Row(
                 children: [
                   Expanded(
-                    child: Text(
-                      player.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        fontWeight: FontWeight.w900,
-                      ),
+                    child: Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            player.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.labelMedium
+                                ?.copyWith(fontWeight: FontWeight.w900),
+                          ),
+                        ),
+                        if (player.type == SplendorPlayerType.bot) ...[
+                          SizedBox(width: 4.w),
+                          Icon(
+                            Icons.smart_toy_rounded,
+                            size: 13.w,
+                            color: colorScheme.primary,
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                   Icon(
@@ -497,11 +518,13 @@ class _TurnPrompt extends StatelessWidget {
     required this.turnIndex,
     required this.currentPlayer,
     required this.pendingAction,
+    required this.isActingBot,
   });
 
   final int turnIndex;
   final SplendorPlayerState currentPlayer;
   final SplendorPendingAction? pendingAction;
+  final bool isActingBot;
 
   @override
   Widget build(BuildContext context) {
@@ -518,12 +541,20 @@ class _TurnPrompt extends StatelessWidget {
   String get _promptText {
     final pendingAction = this.pendingAction;
     if (pendingAction == null) {
+      if (currentPlayer.type == SplendorPlayerType.bot) {
+        return isActingBot
+            ? '第 ${turnIndex + 1} 回合，${currentPlayer.name} 正在思考'
+            : '第 ${turnIndex + 1} 回合，等待 ${currentPlayer.name} 自动行动';
+      }
       return '第 ${turnIndex + 1} 回合，${currentPlayer.name} 请选择一项行动';
     }
 
     if (pendingAction.type == SplendorActionType.discardTokens) {
       final discardCount =
           (pendingAction.tokenCount ?? 0) - (pendingAction.maxTokenCount ?? 0);
+      if (currentPlayer.type == SplendorPlayerType.bot) {
+        return '第 ${turnIndex + 1} 回合，${currentPlayer.name} 正在弃掉 $discardCount 个宝石';
+      }
       return '第 ${turnIndex + 1} 回合，${currentPlayer.name} 请先弃掉 $discardCount 个宝石';
     }
 

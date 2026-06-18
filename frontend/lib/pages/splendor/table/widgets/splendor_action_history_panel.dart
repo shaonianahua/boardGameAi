@@ -19,7 +19,7 @@ class SplendorActionHistoryPanel extends StatelessWidget {
     super.key,
   });
 
-  /// 后端返回的历史行动记录，按时间正序展示。
+  /// 后端返回的历史行动记录；面板内会倒序展示，最新操作在最上方。
   final List<SplendorActionRecord> actions;
 
   /// 当前对局玩家列表，用于把 playerIndex 转成玩家名称。
@@ -57,13 +57,15 @@ class SplendorActionHistoryPanel extends StatelessWidget {
       );
     }
 
+    final displayActions = actions.reversed.toList(growable: false);
+
     return ListView.separated(
       controller: scrollController,
       padding: EdgeInsets.fromLTRB(14.w, 6.h, 14.w, 20.h),
-      itemCount: actions.length,
+      itemCount: displayActions.length,
       separatorBuilder: (context, index) => SizedBox(height: 8.h),
       itemBuilder: (context, index) {
-        final action = actions[index];
+        final action = displayActions[index];
         return _ActionHistoryTile(
           action: action,
           title: _titleFor(action),

@@ -186,6 +186,7 @@ final apiClient = ApiClient(baseUrl: ApiConfig.defaultBaseUrl);
 - `splendorSession(String sessionId)`：单局对局详情路径。
 - `splendorLegalActions(String sessionId)`：当前合法行动路径。
 - `splendorActions(String sessionId)`：提交行动和行动历史路径。
+- `splendorBotAct(String sessionId)`：V2 当前 Bot 玩家自动行动路径，对应 `POST /api/splendor/sessions/:sessionId/bot/act`。
 - `splendorAiDecision(String sessionId)`：V2 AI 建议 / AI 执行路径，计划对应 `POST /api/splendor/sessions/:sessionId/ai/decide`。
 - `splendorAiStream(String sessionId)`：V2 后续流式建议路径，计划对应 `POST /api/splendor/sessions/:sessionId/ai/stream`。
 
@@ -221,6 +222,7 @@ final path = ApiPaths.splendorActions(sessionId);
 - `getLegalActions(String sessionId)`：调用 `GET /api/splendor/sessions/:sessionId/legal-actions`。
 - `submitAction(String sessionId, SplendorSubmitActionInput input)`：调用 `POST /api/splendor/sessions/:sessionId/actions`。
 - `getActions(String sessionId)`：调用 `GET /api/splendor/sessions/:sessionId/actions`。
+- `actBot(String sessionId)`：V2 调用 `POST /api/splendor/sessions/:sessionId/bot/act`，让当前 Bot 玩家由后端选择并执行一个合法行动。
 - `requestAiAdvice(...)`：V2 计划新增，调用 AI 建议接口并返回结构化建议；只做请求和模型转换，不直接执行行动。
 - `requestAiAdviceStream(...)`：V2 后续计划新增，用于流式策略面板；第一版可以先不实现。
 
@@ -334,6 +336,8 @@ try {
 - `SplendorLegalAction`
 - `SplendorSubmitActionResponse`
 - `SplendorActionRecord`
+- `SplendorBotDecision`
+- `SplendorBotActionResponse`
 - `SplendorActionsResponse`
 
 ### `frontend/lib/models/splendor_models.dart`
@@ -593,7 +597,7 @@ GetPage(
 职责：
 
 - 璀璨宝石创建对局页。
-- 收集玩家人数和玩家名称。
+- 收集玩家人数、玩家名称和玩家类型。
 - 调用 `SplendorApi.createSession` 创建本地同屏对局。
 - 创建成功后跳转到 `AppRoutes.splendorTable`，并通过 `Get.arguments` 传递 `SplendorSessionResponse`。
 
@@ -603,12 +607,11 @@ GetPage(
 
 页面内部私有组件：
 
-- `_PlayerCountSelector`：2-4 人选择控件，使用 `SegmentedButton<int>`。
+- `_PlayerInputRow`：单个座位输入行，包含玩家名称输入和真人/Bot 分段选择。
 
 核心方法：
 
-- `_createSession()`：校验玩家名称，提交 `SplendorCreateSessionInput`，处理成功跳转和错误提示。
-- `_showMessage(String message)`：用 `Get.snackbar` 显示创建对局相关提示。
+- 创建逻辑由 `SplendorCreateSessionController.createSession()` 负责。
 
 用法：
 
@@ -619,7 +622,7 @@ Get.toNamed(AppRoutes.splendorCreateSession);
 维护规则：
 
 - 本页只负责创建对局表单和接口编排，不写璀璨宝石规则判断。
-- 玩家类型当前默认 `SplendorPlayerType.human`，未明确 Bot 需求前不要添加额外字段。
+- V2 已支持 `SplendorPlayerType.human` 和 `SplendorPlayerType.bot`；Bot 默认 `botLevel` 为 `balanced`。
 - 新增创建参数时，必须先确认后端接口和需求，再更新 `SplendorCreateSessionInput` 与本文档。
 
 ### `frontend/lib/pages/splendor/create_session/controller/splendor_create_session_controller.dart`
@@ -627,7 +630,7 @@ Get.toNamed(AppRoutes.splendorCreateSession);
 职责：
 
 - 管理创建对局页的表单状态。
-- 维护玩家人数、玩家名称输入框和提交状态。
+- 维护玩家人数、玩家名称输入框、玩家类型和提交状态。
 - 调用 `SplendorApi.createSession` 创建对局。
 - 创建成功后跳转到 `AppRoutes.splendorTable`。
 - 作为创建对局页的 ViewModel，不直接写页面 UI。
@@ -641,10 +644,12 @@ Get.toNamed(AppRoutes.splendorCreateSession);
 - `playerCount`：当前玩家人数。
 - `isSubmitting`：是否正在创建对局。
 - `nameControllers`：固定 4 个输入框控制器，覆盖 2-4 人。
+- `playerTypes`：固定 4 个玩家类型状态，覆盖 2-4 人。
 
 核心方法：
 
 - `setPlayerCount(int value)`：切换玩家人数。
+- `setPlayerType(int index, SplendorPlayerType type)`：设置某个座位是真人或 Bot。
 - `createSession()`：校验名称、提交创建对局请求、处理成功跳转和错误提示。
 
 用法：
@@ -698,6 +703,7 @@ PlayerCountSelector(
 - 当前玩家摘要固定展示玩家手里的各色宝石、分数、永久 bonus 和预留数量。
 - 负责打开市场发展卡行动面板，并把后端合法行动提交给控制器。
 - 通过行动历史中 `reserve_card source: deck` 的前后状态差异，识别其他玩家从牌堆盲抽的预留卡，并在对手详情中隐藏这些卡面。
+- 如果当前行动玩家是 Bot，页面展示 Bot 思考状态，实际自动行动由 `SplendorTableController` 调用后端完成。
 
 核心类：
 
@@ -707,7 +713,7 @@ PlayerCountSelector(
 
 - `_OpponentStrip`：顶部对手摘要条。
 - `_CompactOpponentCard`：单个对手的紧凑摘要。
-- `_TurnPrompt`：当前回合提示；如果存在 `pendingAction`，会提示先弃宝石或先选贵族，避免误认为已经进入下一位玩家普通行动。
+- `_TurnPrompt`：当前回合提示；如果当前玩家是 Bot，会显示等待自动行动或思考中；如果存在 `pendingAction`，会提示先弃宝石或先选贵族。
 - `_EmptySessionView`：路由参数缺失时的空状态。
 - `_hiddenReservedCardIdsByPlayer(...)`：根据行动历史识别每位玩家需要隐藏的盲抽预留卡；历史加载中时保守隐藏全部对手预留卡。
 
@@ -726,6 +732,7 @@ Get.offNamed(AppRoutes.splendorTable, arguments: sessionResponse);
 - 市场和贵族必须优先展示 catalog 信息；只有 catalog 缺失时才用 ID 兜底。
 - 行动按钮应优先基于 `SplendorApi.getLegalActions` 返回内容展示。
 - 提交行动后使用 `SplendorApi.submitAction` 返回的新 `state` 刷新页面。
+- Bot 行动后使用 `SplendorApi.actBot` 返回的新 `state` 刷新页面。
 - 本页不重新实现后端已有的规则判断，只做必要的 UI 禁用和提示。
 - 页面只拼接布局，接口请求和状态变更放在 `SplendorTableController`。
 
@@ -775,8 +782,8 @@ await CardActionsSheet.show(
 职责：
 
 - 管理桌面页的对局状态、catalog 和合法行动。
-- 调用 `getCatalog`、`getSession`、`getLegalActions`、`getActions` 和 `submitAction`。
-- 维护刷新、加载和提交中的状态。
+- 调用 `getCatalog`、`getSession`、`getLegalActions`、`getActions`、`submitAction` 和 `actBot`。
+- 维护刷新、加载、提交和 Bot 自动行动状态。
 - 作为桌面页的 ViewModel，负责页面状态和接口编排，不承载完整规则判断。
 
 核心类：
@@ -794,6 +801,7 @@ await CardActionsSheet.show(
 - `isLoadingLegalActions`：合法行动加载状态。
 - `isLoadingActionHistory`：行动历史加载状态。
 - `isSubmittingAction`：行动提交状态。
+- `isActingBot`：Bot 自动行动状态。
 
 核心方法：
 
@@ -803,6 +811,8 @@ await CardActionsSheet.show(
 - `loadLegalActions()`：拉取当前合法行动。
 - `loadActionHistory()`：拉取当前对局行动历史。
 - `submitLegalAction(SplendorLegalAction legalAction)`：提交后端返回的合法行动。
+- `actCurrentBot()`：调用后端 Bot 自动行动接口，更新状态并提示 Bot 决策原因。
+- `_scheduleBotAutoAction()`：当前玩家是 Bot 时延迟触发自动行动；连续 Bot 会在成功行动后继续推进。
 - `_showAwardedNobleMessage(...)`：提交行动后对比玩家前后贵族列表，如果本回合自动获得贵族，则显示底部提示。
 - `_nobleById(String nobleId)`：从已加载 catalog 中查找贵族，仅用于获得贵族提示文案。
 
@@ -819,7 +829,8 @@ controller.initialize(sessionResponse);
 - `legalActions` 必须以后端为准，前端不自己推导合法性。
 - 行动历史以后端 `game_actions` 为准；自动贵族事件由后端记录为 `noble_visit`，前端只负责翻译展示。
 - 贵族获得由后端在回合收尾自动结算；前端只根据提交行动前后的 `player.nobles` 差异提示结果，不提供手动选择贵族入口。
-- 弃宝石、Bot 决策或本地规则服务等复杂流程出现后，优先抽到 `services/splendor/`。
+- Bot 决策由后端 `bot-advisor.ts` 负责，前端 controller 只做自动触发和状态刷新，不在前端复刻策略。
+- 弃宝石、AI 建议展示编排或本地规则服务等复杂流程出现后，优先抽到 `services/splendor/`。
 
 ### `frontend/lib/pages/splendor/table/splendor_catalog_lookup.dart`
 
@@ -1044,6 +1055,7 @@ final lookup = SplendorCatalogLookup(controller.catalog.value);
 - 桌面页行动历史面板。
 - 把后端 `GameAction` 记录转成中文文案，展示拿宝石、购买、预留、弃宝石和自动获得贵族事件。
 - 使用紧凑列表展示标题、描述和回合序号，避免游戏后期历史过长时难以扫读。
+- 面板内按时间倒序展示，最新操作在最上方；后端和 controller 仍保持原始正序列表，避免影响其它状态推断。
 
 核心类：
 
@@ -1082,6 +1094,7 @@ final lookup = SplendorCatalogLookup(controller.catalog.value);
 - 当前玩家会直接展示手里宝石、五色永久宝石汇总和已购分数卡汇总。
 - 当前玩家会直接展示预留卡；传入 `onReservedCardSelected` 后可点击预留卡打开购买面板。
 - 通过 `cardsById` 把玩家已购卡牌 ID 映射成可读卡牌信息。
+- Bot 玩家名称旁显示 `smart_toy` 图标，帮助区分真人和 Bot。
 
 核心类：
 

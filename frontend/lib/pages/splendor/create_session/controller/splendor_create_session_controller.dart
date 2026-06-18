@@ -29,9 +29,24 @@ class SplendorCreateSessionController extends GetxController {
         (index) => TextEditingController(text: '玩家${index + 1}'),
       );
 
+  /// 当前表单里每个座位的玩家类型，固定保留 4 个以覆盖 2-4 人。
+  final List<Rx<SplendorPlayerType>> playerTypes =
+      List<Rx<SplendorPlayerType>>.generate(
+        4,
+        (_) => SplendorPlayerType.human.obs,
+      );
+
   /// 更新玩家人数。
   void setPlayerCount(int value) {
     playerCount.value = value;
+  }
+
+  /// 设置某个座位是真人还是 Bot。
+  void setPlayerType(int index, SplendorPlayerType type) {
+    if (index < 0 || index >= playerTypes.length) {
+      return;
+    }
+    playerTypes[index].value = type;
   }
 
   /// 创建璀璨宝石对局，成功后进入桌面页。
@@ -49,13 +64,22 @@ class SplendorCreateSessionController extends GetxController {
     isSubmitting.value = true;
 
     try {
+      final createPlayers = <SplendorCreatePlayerInput>[
+        for (var index = 0; index < players.length; index += 1)
+          SplendorCreatePlayerInput(
+            name: players[index],
+            type: playerTypes[index].value,
+            botLevel: playerTypes[index].value == SplendorPlayerType.bot
+                ? 'balanced'
+                : null,
+          ),
+      ];
+
       final response = await _splendorApi.createSession(
         SplendorCreateSessionInput(
           playerCount: playerCount.value,
           title: '璀璨宝石本地对局',
-          players: players
-              .map((name) => SplendorCreatePlayerInput(name: name))
-              .toList(growable: false),
+          players: createPlayers,
         ),
       );
 
