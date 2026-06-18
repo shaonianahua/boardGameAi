@@ -50,6 +50,13 @@ class SplendorTableController extends GetxController {
   /// Bot 自动行动中状态。
   final RxBool isActingBot = false.obs;
 
+  /// AI 建议请求中状态。
+  final RxBool isLoadingAiAdvice = false.obs;
+
+  /// 最近一次 AI 建议结果，用于底部策略面板展示。
+  final Rxn<SplendorAiAdviceResponse> aiAdvice =
+      Rxn<SplendorAiAdviceResponse>();
+
   bool _isAutoAdvancingBot = false;
 
   /// 初始化桌面页所需数据。
@@ -315,6 +322,53 @@ class SplendorTableController extends GetxController {
       }
     }
     return false;
+  }
+
+  /// 为当前真人玩家请求一份 AI 策略建议。
+  ///
+  /// 只读取后端结构化建议，不执行推荐行动；调用方负责决定如何展示。
+  Future<SplendorAiAdviceResponse?> requestAiAdvice() async {
+    final session = sessionResponse.value;
+    if (session == null) {
+      _showMessage('没有找到当前对局');
+      return null;
+    }
+    if (session.state.status != SplendorSessionStatus.active) {
+      _showMessage('对局已结束，不能继续请求建议');
+      return null;
+    }
+
+    final currentPlayer =
+        session.state.players[session.state.currentPlayerIndex];
+    if (currentPlayer.type != SplendorPlayerType.human) {
+      _showMessage('当前是 Bot 回合，暂时不需要 AI 建议');
+      return null;
+    }
+
+    isLoadingAiAdvice.value = true;
+    try {
+      final response = await _splendorApi.requestAiAdvice(session.session.id);
+      aiAdvice.value = response;
+      return response;
+    } on ApiException catch (error) {
+      developer.log(
+        'ai advice api error: code=${error.error.code}, '
+        'message=${error.error.message}, session=${session.session.id}',
+        name: 'splendor.api',
+        error: error,
+      );
+      _showMessage(error.error.message);
+    } catch (error) {
+      developer.log(
+        'ai advice unexpected error: session=${session.session.id}',
+        name: 'splendor.api',
+        error: error,
+      );
+      _showMessage('获取 AI 建议失败：$error');
+    } finally {
+      isLoadingAiAdvice.value = false;
+    }
+    return null;
   }
 
   String? _currentPlayerTypeName(SplendorGameState? state) {

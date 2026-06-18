@@ -1,5 +1,6 @@
 import type { GameAction, GamePlayer, GameSession, Prisma } from '@prisma/client';
 import { prisma } from '../../db/prisma.js';
+import { createSplendorAdvice, type SplendorAdviceResponse } from './advisor-service.js';
 import { chooseSplendorBotAction } from './bot-advisor.js';
 import { actionType, applySplendorAction, generateSplendorLegalActions } from './rules.js';
 import { createInitialSplendorState, parseState, stringifyState } from './state.js';
@@ -291,4 +292,10 @@ export async function getSplendorLegalActions(
 ): Promise<SplendorLegalActionsResult> {
   const existing = await getSplendorSession(sessionId);
   return generateSplendorLegalActions(existing.state);
+}
+
+export async function getSplendorAdvice(sessionId: string): Promise<SplendorAdviceResponse> {
+  const existing = await getSplendorSession(sessionId);
+  const legalActions = generateSplendorLegalActions(existing.state);
+  return createSplendorAdvice(existing.state, legalActions);
 }

@@ -32,4 +32,9 @@ class ApiPaths {
   static String splendorBotAct(String sessionId) {
     return '${splendorSession(sessionId)}/bot/act';
   }
+
+  /// V2 AI 建议接口，第一版由后端本地启发式返回结构化建议。
+  static String splendorAiDecision(String sessionId) {
+    return '${splendorSession(sessionId)}/ai/decide';
+  }
 }

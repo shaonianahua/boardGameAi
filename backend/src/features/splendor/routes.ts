@@ -3,6 +3,7 @@ import { splendorCards, splendorNobles } from './catalog.js';
 import {
   actSplendorBot,
   createSplendorSession,
+  getSplendorAdvice,
   getSplendorLegalActions,
   getSplendorSession,
   listSplendorActions,
@@ -91,6 +92,15 @@ export async function registerSplendorRoutes(app: FastifyInstance): Promise<void
     try {
       const params = request.params as { sessionId: string };
       return await actSplendorBot(params.sessionId);
+    } catch (error) {
+      return reply.status(400).send(errorResponse(error));
+    }
+  });
+
+  app.post('/api/splendor/sessions/:sessionId/ai/decide', async (request, reply) => {
+    try {
+      const params = request.params as { sessionId: string };
+      return await getSplendorAdvice(params.sessionId);
     } catch (error) {
       return reply.status(400).send(errorResponse(error));
     }

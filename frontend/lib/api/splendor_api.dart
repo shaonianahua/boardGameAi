@@ -95,6 +95,19 @@ class SplendorApi {
     return SplendorBotActionResponse.fromJson(_data(response));
   }
 
+  /// 调用 `POST /api/splendor/sessions/:sessionId/ai/decide` 获取真人当前回合策略建议。
+  ///
+  /// 第一版只请求结构化建议，不执行行动；后续接入大模型或流式输出时仍从这里统一封装。
+  Future<SplendorAiAdviceResponse> requestAiAdvice(String sessionId) async {
+    final response = await _request(
+      () => _apiClient.post<Map<String, dynamic>>(
+        ApiPaths.splendorAiDecision(sessionId),
+        data: const <String, dynamic>{},
+      ),
+    );
+    return SplendorAiAdviceResponse.fromJson(_data(response));
+  }
+
   /// 包装 Dio 请求，把后端非 2xx 错误体里的 `{ error }` 转成 `ApiException`。
   Future<Response<Map<String, dynamic>>> _request(
     Future<Response<Map<String, dynamic>>> Function() request,

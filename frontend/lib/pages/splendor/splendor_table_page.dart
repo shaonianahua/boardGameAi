@@ -8,6 +8,7 @@ import 'table/actions/legal_actions_panel.dart';
 import 'table/controller/splendor_table_controller.dart';
 import 'table/splendor_catalog_lookup.dart';
 import 'table/widgets/splendor_action_history_panel.dart';
+import 'table/widgets/splendor_ai_advice_panel.dart';
 import 'table/widgets/splendor_game_result_panel.dart';
 import 'table/widgets/splendor_market_card.dart';
 import 'table/widgets/splendor_noble_card.dart';
@@ -152,6 +153,16 @@ class _SplendorTablePageState extends State<SplendorTablePage> {
                           controller.legalActions.value?.pendingAction,
                       isActingBot: controller.isActingBot.value,
                     ),
+                    if (_canShowAiAdviceButton(response.state)) ...[
+                      SizedBox(height: 8.h),
+                      _AiAdviceButton(
+                        isLoading: controller.isLoadingAiAdvice.value,
+                        isDisabled:
+                            controller.isSubmittingAction.value ||
+                            controller.isActingBot.value,
+                        onPressed: _showAiAdviceSheet,
+                      ),
+                    ],
                     SizedBox(height: 8.h),
                     SplendorGameResultPanel(state: response.state),
                     if (response.state.finalRound.triggered ||
@@ -269,6 +280,48 @@ class _SplendorTablePageState extends State<SplendorTablePage> {
                           ),
                   ),
                 ],
+              );
+            });
+          },
+        );
+      },
+    );
+  }
+
+  bool _canShowAiAdviceButton(SplendorGameState state) {
+    if (state.status != SplendorSessionStatus.active) {
+      return false;
+    }
+    final currentPlayer = state.players[state.currentPlayerIndex];
+    return currentPlayer.type == SplendorPlayerType.human;
+  }
+
+  Future<void> _showAiAdviceSheet() async {
+    final advice = await controller.requestAiAdvice();
+    if (!mounted || advice == null) {
+      return;
+    }
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+      ),
+      builder: (context) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.68,
+          minChildSize: 0.38,
+          maxChildSize: 0.9,
+          builder: (context, scrollController) {
+            return Obx(() {
+              final currentAdvice = controller.aiAdvice.value ?? advice;
+              return SplendorAiAdvicePanel(
+                advice: currentAdvice,
+                scrollController: scrollController,
+                onClose: () => Navigator.of(context).pop(),
               );
             });
           },
@@ -577,6 +630,34 @@ class _EmptySessionView extends StatelessWidget {
           style: Theme.of(context).textTheme.bodyLarge,
         ),
       ),
+    );
+  }
+}
+
+/// 真人回合的 AI 建议入口按钮。
+class _AiAdviceButton extends StatelessWidget {
+  const _AiAdviceButton({
+    required this.isLoading,
+    required this.isDisabled,
+    required this.onPressed,
+  });
+
+  final bool isLoading;
+  final bool isDisabled;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return FilledButton.icon(
+      onPressed: isLoading || isDisabled ? null : onPressed,
+      icon: isLoading
+          ? SizedBox(
+              width: 16.w,
+              height: 16.w,
+              child: const CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.auto_awesome_rounded),
+      label: Text(isLoading ? '正在分析' : 'AI 建议'),
     );
   }
 }

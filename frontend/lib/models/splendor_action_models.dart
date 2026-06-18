@@ -328,6 +328,83 @@ class SplendorBotActionResponse {
   final SplendorBotDecision decision;
 }
 
+/// AI 建议接口返回的结构化决策内容。
+///
+/// 第一版由后端本地启发式生成，后续接入大模型时继续复用这组字段展示策略面板。
+class SplendorAiAdviceDecision {
+  /// 构造 AI 建议决策内容。
+  const SplendorAiAdviceDecision({
+    required this.actionId,
+    required this.confidence,
+    required this.summary,
+    required this.reasoning,
+    required this.alternatives,
+    required this.threats,
+    required this.risks,
+  });
+
+  /// 从 `POST /api/splendor/sessions/:sessionId/ai/decide` 的 decision 字段解析。
+  factory SplendorAiAdviceDecision.fromJson(JsonMap json) {
+    return SplendorAiAdviceDecision(
+      actionId: json['actionId'] as String?,
+      confidence: (json['confidence'] as num? ?? 0).toDouble(),
+      summary: json['summary'] as String? ?? '暂无明确建议',
+      reasoning: stringList(json['reasoning']),
+      alternatives: stringList(json['alternatives']),
+      threats: stringList(json['threats']),
+      risks: stringList(json['risks']),
+    );
+  }
+
+  /// 推荐行动的稳定 ID；为空表示当前没有可推荐行动。
+  final String? actionId;
+
+  /// 建议置信度，取值通常在 0-1 之间。
+  final double confidence;
+
+  /// 面板顶部展示的结论。
+  final String summary;
+
+  /// 推荐该行动的理由列表。
+  final List<String> reasoning;
+
+  /// 备选行动说明列表。
+  final List<String> alternatives;
+
+  /// 对手威胁或需要关注的局面信息。
+  final List<String> threats;
+
+  /// 当前建议可能存在的风险。
+  final List<String> risks;
+}
+
+/// AI 建议接口响应。
+///
+/// `selectedAction` 只用于展示推荐行动，不会在前端自动执行。
+class SplendorAiAdviceResponse {
+  /// 构造 AI 建议响应。
+  const SplendorAiAdviceResponse({
+    required this.decision,
+    required this.selectedAction,
+  });
+
+  /// 从 AI 建议接口 JSON 解析。
+  factory SplendorAiAdviceResponse.fromJson(JsonMap json) {
+    return SplendorAiAdviceResponse(
+      decision: SplendorAiAdviceDecision.fromJson(json['decision'] as JsonMap),
+      selectedAction: json['selectedAction'] == null
+          ? null
+          : SplendorLegalAction.fromJson(json['selectedAction'] as JsonMap),
+    );
+  }
+
+  /// 结构化建议内容。
+  final SplendorAiAdviceDecision decision;
+
+  /// 后端推荐的合法行动；为空表示当前没有可执行建议。
+  final SplendorLegalAction? selectedAction;
+}
+
 /// 行动历史接口响应。
 class SplendorActionsResponse {
   /// 构造行动历史响应。

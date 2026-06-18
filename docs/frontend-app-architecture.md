@@ -1,6 +1,6 @@
 # Flutter App 架构索引
 
-版本：2026-06-17
+版本：2026-06-18
 
 ## 使用要求
 
@@ -223,7 +223,7 @@ final path = ApiPaths.splendorActions(sessionId);
 - `submitAction(String sessionId, SplendorSubmitActionInput input)`：调用 `POST /api/splendor/sessions/:sessionId/actions`。
 - `getActions(String sessionId)`：调用 `GET /api/splendor/sessions/:sessionId/actions`。
 - `actBot(String sessionId)`：V2 调用 `POST /api/splendor/sessions/:sessionId/bot/act`，让当前 Bot 玩家由后端选择并执行一个合法行动。
-- `requestAiAdvice(...)`：V2 计划新增，调用 AI 建议接口并返回结构化建议；只做请求和模型转换，不直接执行行动。
+- `requestAiAdvice(String sessionId)`：V2 调用 `POST /api/splendor/sessions/:sessionId/ai/decide` 获取结构化 AI 建议；只做请求和模型转换，不直接执行行动。
 - `requestAiAdviceStream(...)`：V2 后续计划新增，用于流式策略面板；第一版可以先不实现。
 
 用法：
@@ -338,6 +338,8 @@ try {
 - `SplendorActionRecord`
 - `SplendorBotDecision`
 - `SplendorBotActionResponse`
+- `SplendorAiAdviceDecision`
+- `SplendorAiAdviceResponse`
 - `SplendorActionsResponse`
 
 ### `frontend/lib/models/splendor_models.dart`
@@ -704,6 +706,7 @@ PlayerCountSelector(
 - 负责打开市场发展卡行动面板，并把后端合法行动提交给控制器。
 - 通过行动历史中 `reserve_card source: deck` 的前后状态差异，识别其他玩家从牌堆盲抽的预留卡，并在对手详情中隐藏这些卡面。
 - 如果当前行动玩家是 Bot，页面展示 Bot 思考状态，实际自动行动由 `SplendorTableController` 调用后端完成。
+- 如果当前行动玩家是真人，页面展示“AI 建议”按钮，点击后请求后端建议并打开底部策略面板。
 
 核心类：
 
@@ -714,12 +717,14 @@ PlayerCountSelector(
 - `_OpponentStrip`：顶部对手摘要条。
 - `_CompactOpponentCard`：单个对手的紧凑摘要。
 - `_TurnPrompt`：当前回合提示；如果当前玩家是 Bot，会显示等待自动行动或思考中；如果存在 `pendingAction`，会提示先弃宝石或先选贵族。
+- `_AiAdviceButton`：真人当前回合的 AI 建议入口，只负责加载态和点击回调。
 - `_EmptySessionView`：路由参数缺失时的空状态。
 - `_hiddenReservedCardIdsByPlayer(...)`：根据行动历史识别每位玩家需要隐藏的盲抽预留卡；历史加载中时保守隐藏全部对手预留卡。
 
 核心方法：
 
 - `_showCardActions(SplendorCard card)`：打开被点选市场卡的购买/预留行动面板，面板只匹配后端返回的合法行动。
+- `_showAiAdviceSheet()`：请求 `SplendorTableController.requestAiAdvice()`，成功后打开 `SplendorAiAdvicePanel` 展示结构化建议。
 
 用法：
 
@@ -733,6 +738,7 @@ Get.offNamed(AppRoutes.splendorTable, arguments: sessionResponse);
 - 行动按钮应优先基于 `SplendorApi.getLegalActions` 返回内容展示。
 - 提交行动后使用 `SplendorApi.submitAction` 返回的新 `state` 刷新页面。
 - Bot 行动后使用 `SplendorApi.actBot` 返回的新 `state` 刷新页面。
+- AI 建议只展示推荐内容，不自动执行行动；采纳建议要等后续明确交互再开发。
 - 本页不重新实现后端已有的规则判断，只做必要的 UI 禁用和提示。
 - 页面只拼接布局，接口请求和状态变更放在 `SplendorTableController`。
 
@@ -802,6 +808,8 @@ await CardActionsSheet.show(
 - `isLoadingActionHistory`：行动历史加载状态。
 - `isSubmittingAction`：行动提交状态。
 - `isActingBot`：Bot 自动行动状态。
+- `isLoadingAiAdvice`：AI 建议请求状态。
+- `aiAdvice`：最近一次 AI 建议响应，供底部策略面板展示。
 
 核心方法：
 
@@ -812,6 +820,7 @@ await CardActionsSheet.show(
 - `loadActionHistory()`：拉取当前对局行动历史。
 - `submitLegalAction(SplendorLegalAction legalAction)`：提交后端返回的合法行动。
 - `actCurrentBot()`：调用后端 Bot 自动行动接口，更新状态并提示 Bot 决策原因。
+- `requestAiAdvice()`：为当前真人玩家请求结构化 AI 建议；不执行推荐行动。
 - `_scheduleBotAutoAction()`：当前玩家是 Bot 时延迟触发自动行动；连续 Bot 会在成功行动后继续推进。
 - `_showAwardedNobleMessage(...)`：提交行动后对比玩家前后贵族列表，如果本回合自动获得贵族，则显示底部提示。
 - `_nobleById(String nobleId)`：从已加载 catalog 中查找贵族，仅用于获得贵族提示文案。
@@ -830,7 +839,8 @@ controller.initialize(sessionResponse);
 - 行动历史以后端 `game_actions` 为准；自动贵族事件由后端记录为 `noble_visit`，前端只负责翻译展示。
 - 贵族获得由后端在回合收尾自动结算；前端只根据提交行动前后的 `player.nobles` 差异提示结果，不提供手动选择贵族入口。
 - Bot 决策由后端 `bot-advisor.ts` 负责，前端 controller 只做自动触发和状态刷新，不在前端复刻策略。
-- 弃宝石、AI 建议展示编排或本地规则服务等复杂流程出现后，优先抽到 `services/splendor/`。
+- AI 建议接口由 `SplendorApi.requestAiAdvice` 统一封装，页面和 controller 不直接拼路径。
+- 弃宝石、AI 建议多步编排或本地规则服务等复杂流程出现后，优先抽到 `services/splendor/`。
 
 ### `frontend/lib/pages/splendor/table/splendor_catalog_lookup.dart`
 
@@ -1069,6 +1079,30 @@ final lookup = SplendorCatalogLookup(controller.catalog.value);
 - `noblesById`：贵族 catalog 索引。
 - `isLoading`：行动历史加载状态。
 - `scrollController`：可选滚动控制器，bottom sheet 内传入以协调拖拽滚动。
+
+### `frontend/lib/pages/splendor/table/widgets/splendor_ai_advice_panel.dart`
+
+职责：
+
+- 真人玩家点击“AI 建议”后展示结构化策略建议。
+- 展示推荐结论、推荐行动、置信度、推荐理由、备选行动、对手威胁和风险提示。
+- 第一版只读展示，不提供采纳建议或自动执行行动。
+
+核心类：
+
+- `SplendorAiAdvicePanel`
+
+核心参数：
+
+- `advice`：`SplendorAiAdviceResponse`，来自 `SplendorApi.requestAiAdvice`。
+- `onClose`：关闭 bottom sheet 的回调。
+- `scrollController`：可选滚动控制器，bottom sheet 内传入以协调拖拽滚动。
+
+维护规则：
+
+- 面板不直接请求接口，不直接提交行动。
+- 面板只展示后端已经校验过的推荐行动和解释。
+- 后续流式输出、桌面高亮或“采纳建议”应在保持该面板只负责展示的前提下新增明确回调。
 
 ### `frontend/lib/pages/splendor/table/widgets/splendor_game_result_panel.dart`
 
@@ -1401,6 +1435,8 @@ final textTheme = Theme.of(context).textTheme;
 
 下一步建议按以下顺序增加文件，并同步更新本文档：
 
-1. 继续优化卡面排版，必要时再把卡牌/贵族 tile 抽成可复用组件。
+1. 接入真实大模型 Provider 前，先保持 `SplendorAiAdvicePanel` 的结构化字段稳定。
+2. 后续可在 AI 建议面板增加流式输出和桌面轻量高亮，但不要让面板直接执行行动。
+3. 继续优化卡面排版，必要时再把卡牌/贵族 tile 抽成可复用组件。
 
 每一步都先保证职责清晰，不把规则逻辑写进页面。

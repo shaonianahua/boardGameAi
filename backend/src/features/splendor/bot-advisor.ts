@@ -150,7 +150,7 @@ interface SplendorBotDecisionScore {
   reason: string;
 }
 
-function scoreAction(
+export function scoreSplendorLegalAction(
   state: SplendorGameState,
   player: SplendorPlayerState,
   legalAction: SplendorLegalAction,
@@ -196,7 +196,7 @@ export function chooseSplendorBotAction(
   }
 
   return legalActions.actions
-    .map((legalAction) => scoreAction(state, player, legalAction))
+    .map((legalAction) => scoreSplendorLegalAction(state, player, legalAction))
     .sort((left, right) => {
       if (right.score !== left.score) return right.score - left.score;
       return left.legalAction.label.localeCompare(right.legalAction.label);
