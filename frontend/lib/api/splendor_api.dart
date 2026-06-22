@@ -117,20 +117,54 @@ class SplendorApi {
   Stream<SplendorAiAdviceStreamEvent> requestAiAdviceStream(
     String sessionId,
   ) async* {
-    final textStream = await _apiClient.postTextStream(
-      ApiPaths.splendorAiStream(sessionId),
-      data: const <String, dynamic>{},
-      options: Options(headers: const {'Accept': 'text/event-stream'}),
-    );
+    try {
+      final textStream = await _apiClient.postTextStream(
+        ApiPaths.splendorAiStream(sessionId),
+        data: const <String, dynamic>{},
+        options: Options(headers: const {'Accept': 'text/event-stream'}),
+      );
 
-    _streamLog('start stream session=$sessionId');
-    final buffer = StringBuffer();
-    await for (final chunk in textStream) {
-      _streamLog('raw chunk session=$sessionId data=$chunk');
-      buffer.write(chunk);
-      yield* _drainSseBuffer(buffer, flush: false);
+      _streamLog('start stream session=$sessionId');
+      final buffer = StringBuffer();
+      await for (final chunk in textStream) {
+        _streamLog('raw chunk session=$sessionId data=$chunk');
+        buffer.write(chunk);
+        yield* _drainSseBuffer(buffer, flush: false);
+      }
+      yield* _drainSseBuffer(buffer, flush: true);
+    } on DioException catch (error) {
+      developer.log(
+        'AI stream Dio error: type=${error.type}, '
+        'status=${error.response?.statusCode}, message=${error.message}',
+        name: _streamLogName,
+        error: error,
+        stackTrace: error.stackTrace,
+      );
+      throw ApiException(_errorFromDioException(error));
+    } on FormatException catch (error, stackTrace) {
+      developer.log(
+        'AI stream parse error: ${error.message}',
+        name: _streamLogName,
+        error: error,
+        stackTrace: stackTrace,
+      );
+      throw const ApiException(
+        ApiError(code: 'AI_STREAM_PARSE_FAILED', message: 'AI 流式数据解析失败，请重试'),
+      );
+    } catch (error, stackTrace) {
+      developer.log(
+        'AI stream read error: $error',
+        name: _streamLogName,
+        error: error,
+        stackTrace: stackTrace,
+      );
+      throw const ApiException(
+        ApiError(
+          code: 'AI_STREAM_READ_FAILED',
+          message: '网络连接中断，请检查后端服务或网络后重试',
+        ),
+      );
     }
-    yield* _drainSseBuffer(buffer, flush: true);
   }
 
   /// 包装 Dio 请求，把后端非 2xx 错误体里的 `{ error }` 转成 `ApiException`。
@@ -186,6 +220,40 @@ class SplendorApi {
       return ApiError.fromJson(error);
     }
     return null;
+  }
+
+  ApiError _errorFromDioException(DioException error) {
+    final data = error.response?.data;
+    if (data is Map<String, dynamic>) {
+      final apiError = _errorFromData(data);
+      if (apiError != null) {
+        return apiError;
+      }
+    }
+
+    final code = switch (error.type) {
+      DioExceptionType.connectionTimeout ||
+      DioExceptionType.sendTimeout ||
+      DioExceptionType.receiveTimeout ||
+      DioExceptionType.connectionError ||
+      DioExceptionType.unknown => 'NETWORK_INTERRUPTED',
+      DioExceptionType.cancel => 'REQUEST_CANCELLED',
+      DioExceptionType.badCertificate => 'BAD_CERTIFICATE',
+      DioExceptionType.badResponse => 'STREAM_BAD_RESPONSE',
+    };
+
+    final message = switch (error.type) {
+      DioExceptionType.connectionTimeout => '连接后端服务超时，请检查网络后重试',
+      DioExceptionType.sendTimeout => '请求发送超时，请检查网络后重试',
+      DioExceptionType.receiveTimeout => 'AI 建议响应超时，请稍后重试',
+      DioExceptionType.connectionError => '网络连接中断，请检查后端服务或网络后重试',
+      DioExceptionType.cancel => 'AI 建议请求已取消',
+      DioExceptionType.badCertificate => '网络证书异常，请检查服务配置',
+      DioExceptionType.badResponse => 'AI 流式接口响应异常，请稍后重试',
+      DioExceptionType.unknown => '网络连接异常，请检查后端服务或网络后重试',
+    };
+
+    return ApiError(code: code, message: message);
   }
 
   Stream<SplendorAiAdviceStreamEvent> _drainSseBuffer(

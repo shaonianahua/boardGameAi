@@ -60,6 +60,8 @@ class SplendorTableController extends GetxController {
   /// AI 建议流式输出文本，供底部策略面板做渐进展示。
   final RxList<String> aiAdviceStreamLines = <String>[].obs;
 
+  static const _maxAiAdviceStreamRetries = 3;
+
   bool _isAutoAdvancingBot = false;
 
   /// 初始化桌面页所需数据。
@@ -350,7 +352,6 @@ class SplendorTableController extends GetxController {
 
     isLoadingAiAdvice.value = true;
     aiAdviceStreamLines.clear();
-    final streamDisplayFilter = _AiAdviceStreamDisplayFilter();
     try {
       developer.log(
         'start ai advice stream: session=${session.session.id}, '
@@ -359,40 +360,9 @@ class SplendorTableController extends GetxController {
         name: 'splendor.ai',
       );
 
-      SplendorAiAdviceResponse? finalResponse;
-      await for (final event in _splendorApi.requestAiAdviceStream(
+      final finalResponse = await _requestAiAdviceStreamWithRetry(
         session.session.id,
-      )) {
-        final visibleText = switch (event.type) {
-          'delta' => streamDisplayFilter.append(event.text),
-          _ => event.text,
-        };
-        if (visibleText.trim().isNotEmpty) {
-          _appendAiAdviceStreamText(
-            visibleText,
-            appendToLastLine: event.type == 'delta',
-          );
-        }
-        if (event.type == 'result') {
-          streamDisplayFilter.stop();
-        }
-        if (event.type == 'done') {
-          final flushedText = streamDisplayFilter.flush();
-          if (flushedText.trim().isNotEmpty) {
-            aiAdviceStreamLines.add(flushedText);
-          }
-        }
-        if (event.text.isNotEmpty) {
-          developer.log(
-            'ai stream event: type=${event.type}, visible=${visibleText.isNotEmpty}, raw=${event.text}',
-            name: 'splendor.ai',
-          );
-        }
-        if (event.response != null) {
-          finalResponse = event.response;
-          aiAdvice.value = event.response;
-        }
-      }
+      );
 
       if (finalResponse == null) {
         throw const ApiException(
@@ -411,24 +381,107 @@ class SplendorTableController extends GetxController {
         name: 'splendor.ai',
       );
       return finalResponse;
-    } on ApiException catch (error) {
-      developer.log(
-        'ai advice stream api error: code=${error.error.code}, '
-        'message=${error.error.message}, session=${session.session.id}',
-        name: 'splendor.api',
-        error: error,
-      );
-      return _requestAiAdviceFallback(session.session.id);
     } catch (error) {
       developer.log(
         'ai advice stream unexpected error: session=${session.session.id}',
         name: 'splendor.api',
         error: error,
       );
-      return _requestAiAdviceFallback(session.session.id);
+      _appendAiAdviceStreamText(
+        'AI 建议生成异常，已停止生成。请稍后重新获取建议。',
+        appendToLastLine: false,
+      );
+      _showMessage('AI 建议生成异常，请稍后重试');
+      return null;
     } finally {
       isLoadingAiAdvice.value = false;
     }
+  }
+
+  Future<SplendorAiAdviceResponse?> _requestAiAdviceStreamWithRetry(
+    String sessionId,
+  ) async {
+    for (var attempt = 0; attempt <= _maxAiAdviceStreamRetries; attempt += 1) {
+      if (attempt > 0) {
+        _appendAiAdviceStreamText('已重新连接，以下为重新生成内容。', appendToLastLine: false);
+      }
+
+      try {
+        return await _consumeAiAdviceStream(sessionId);
+      } on ApiException catch (error) {
+        developer.log(
+          'ai advice stream api error: code=${error.error.code}, '
+          'message=${error.error.message}, session=$sessionId, attempt=$attempt',
+          name: 'splendor.api',
+          error: error,
+        );
+        if (!_isNetworkInterrupted(error)) {
+          return _requestAiAdviceFallback(sessionId);
+        }
+        if (attempt >= _maxAiAdviceStreamRetries) {
+          _appendAiAdviceStreamText(
+            '网络连接仍然不可用，已停止自动重试。请检查网络或后端服务后重新获取建议。',
+            appendToLastLine: false,
+          );
+          _showMessage(error.error.message);
+          return null;
+        }
+
+        final retryDelay = _aiAdviceRetryDelay(attempt);
+        _appendAiAdviceStreamText(
+          '网络连接中断，${retryDelay.inSeconds} 秒后自动重试（${attempt + 1}/$_maxAiAdviceStreamRetries）。',
+          appendToLastLine: false,
+        );
+        await Future<void>.delayed(retryDelay);
+      }
+    }
+
+    return null;
+  }
+
+  Future<SplendorAiAdviceResponse?> _consumeAiAdviceStream(
+    String sessionId,
+  ) async {
+    final streamDisplayFilter = _AiAdviceStreamDisplayFilter();
+    SplendorAiAdviceResponse? finalResponse;
+
+    await for (final event in _splendorApi.requestAiAdviceStream(sessionId)) {
+      final visibleText = switch (event.type) {
+        'delta' => streamDisplayFilter.append(event.text),
+        _ => event.text,
+      };
+      if (visibleText.trim().isNotEmpty) {
+        _appendAiAdviceStreamText(
+          visibleText,
+          appendToLastLine: event.type == 'delta',
+        );
+      }
+      if (event.type == 'result') {
+        streamDisplayFilter.stop();
+      }
+      if (event.type == 'done') {
+        final flushedText = streamDisplayFilter.flush();
+        if (flushedText.trim().isNotEmpty) {
+          aiAdviceStreamLines.add(flushedText);
+        }
+      }
+      if (event.text.isNotEmpty) {
+        developer.log(
+          'ai stream event: type=${event.type}, visible=${visibleText.isNotEmpty}, raw=${event.text}',
+          name: 'splendor.ai',
+        );
+      }
+      if (event.response != null) {
+        finalResponse = event.response;
+        aiAdvice.value = event.response;
+      }
+    }
+
+    return finalResponse;
+  }
+
+  Duration _aiAdviceRetryDelay(int attempt) {
+    return Duration(seconds: 1 << attempt);
   }
 
   Future<SplendorAiAdviceResponse?> _requestAiAdviceFallback(
@@ -446,6 +499,16 @@ class SplendorTableController extends GetxController {
       _showMessage('获取 AI 建议失败：$error');
     }
     return null;
+  }
+
+  bool _isNetworkInterrupted(ApiException error) {
+    return switch (error.error.code) {
+      'NETWORK_INTERRUPTED' ||
+      'AI_STREAM_READ_FAILED' ||
+      'REQUEST_CANCELLED' ||
+      'BAD_CERTIFICATE' => true,
+      _ => false,
+    };
   }
 
   void _appendAiAdviceStreamText(

@@ -226,6 +226,8 @@ final path = ApiPaths.splendorActions(sessionId);
 - `requestAiAdvice(String sessionId)`：V2 调用 `POST /api/splendor/sessions/:sessionId/ai/decide` 获取结构化 AI 建议；只做请求和模型转换，不直接执行行动。
 - `requestAiAdviceStream(String sessionId)`：V2 调用 `POST /api/splendor/sessions/:sessionId/ai/stream` 获取 SSE 流式建议事件；事件包含 progress、delta、result 和 done，result 会携带最终结构化建议。
 - `_streamLog(String message)`：AI 流式接口专用日志，输出原始 chunk、SSE block 和解析后的业务事件，日志前缀为 `splendor.ai.stream`。
+- `_errorFromDioException(DioException error)`：把流式请求中的 Dio 网络异常转换成统一 `ApiError`；网络中断类错误会返回 `NETWORK_INTERRUPTED` 等稳定错误码。
+- `requestAiAdviceStream(String sessionId)`：流式读取阶段如果出现非 Dio 的底层 stream 异常，会统一转成 `AI_STREAM_READ_FAILED`，避免断网被误判为普通流式失败。
 
 用法：
 
@@ -824,7 +826,11 @@ await CardActionsSheet.show(
 - `submitLegalAction(SplendorLegalAction legalAction)`：提交后端返回的合法行动。
 - `actCurrentBot()`：调用后端 Bot 自动行动接口，更新状态并提示 Bot 决策原因。
 - `requestAiAdvice()`：为当前真人玩家请求 AI 建议；优先走流式接口，失败时回退非流式接口，不执行推荐行动。
+- `_requestAiAdviceStreamWithRetry(String sessionId)`：AI 流式请求网络中断时保留已输出文本并自动重试，重连后明确提示“以下为重新生成内容”；默认最多重试 3 次。
+- `_consumeAiAdviceStream(String sessionId)`：消费一次 AI SSE 流，把 `delta` 文本和 `result` 结构化建议分别写入页面状态。
+- `_aiAdviceRetryDelay(int attempt)`：AI 流式自动重试的指数退避间隔，当前依次为 1、2、4 秒。
 - `_requestAiAdviceFallback(String sessionId)`：AI 流式接口失败后的非流式兜底请求，保证建议功能不中断。
+- `_isNetworkInterrupted(ApiException error)`：识别 AI 流式请求中的网络中断、读取失败、取消和证书异常；这类错误不再继续 fallback，而是在面板中提示用户重试或自动重连。
 - `_appendAiAdviceStreamText(String text, { required bool appendToLastLine })`：把流式文本追加到实时分析展示区；模型 delta 默认合并到上一行，避免一个字一个字变成多行。
 - `_AiAdviceStreamDisplayFilter`：过滤模型原生流中的 `<FINAL_JSON>`、半截 `<FINAL_JSON`、JSON 片段和 markdown 标识，只把自然语言分析交给 UI 展示。
 - `_scheduleBotAutoAction()`：当前玩家是 Bot 时延迟触发自动行动；连续 Bot 会在成功行动后继续推进。
