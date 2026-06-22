@@ -1,6 +1,9 @@
 import Fastify from 'fastify';
 import { prisma } from './db/prisma.js';
+import { loadEnvFile } from './env.js';
 import { registerSplendorRoutes } from './features/splendor/routes.js';
+
+loadEnvFile();
 
 const app = Fastify({ logger: true });
 const port = Number(process.env.PORT ?? 3000);

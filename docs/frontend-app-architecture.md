@@ -824,6 +824,8 @@ await CardActionsSheet.show(
 - `_scheduleBotAutoAction()`：当前玩家是 Bot 时延迟触发自动行动；连续 Bot 会在成功行动后继续推进。
 - `_showAwardedNobleMessage(...)`：提交行动后对比玩家前后贵族列表，如果本回合自动获得贵族，则显示底部提示。
 - `_nobleById(String nobleId)`：从已加载 catalog 中查找贵族，仅用于获得贵族提示文案。
+- `_isHeuristicFallback(SplendorAiAdviceResponse response)`：根据建议理由判断本次是否是模型失败后的本地启发式 fallback，仅用于前端日志。
+- `_showMessage(String message)`：桌面页轻量提示统一显示在顶部，避免底部 snackbar 挡住玩家操作区。
 
 用法：
 
@@ -840,6 +842,7 @@ controller.initialize(sessionResponse);
 - 贵族获得由后端在回合收尾自动结算；前端只根据提交行动前后的 `player.nobles` 差异提示结果，不提供手动选择贵族入口。
 - Bot 决策由后端 `bot-advisor.ts` 负责，前端 controller 只做自动触发和状态刷新，不在前端复刻策略。
 - AI 建议接口由 `SplendorApi.requestAiAdvice` 统一封装，页面和 controller 不直接拼路径。
+- AI 建议请求开始、成功和失败都会在 Flutter 日志中以 `splendor.ai` / `splendor.api` 分类输出，方便真机调试模型是否真实返回。
 - 弃宝石、AI 建议多步编排或本地规则服务等复杂流程出现后，优先抽到 `services/splendor/`。
 
 ### `frontend/lib/pages/splendor/table/splendor_catalog_lookup.dart`
@@ -1252,6 +1255,7 @@ MobileViewport(
 - 提供全项目共享的 HTTP `get`、`post`、`put`、`delete` 方法。
 - 统一配置 JSON 请求、JSON 响应、连接超时和接收超时。
 - 提供 `setBearerToken` 管理 Authorization header。
+- 统一通过 Dio interceptor 打印接口日志，使用 `debugPrint` 输出到 Flutter 控制台，包含请求路径、query、body、header、响应状态和响应数据。
 
 核心类：
 
@@ -1262,12 +1266,14 @@ MobileViewport(
 - `dio`：可选，测试或特殊场景可注入自定义 Dio。
 - `baseUrl`：可选，默认空字符串。当前不写死后端地址，避免在基础设施层提前绑定环境。
 - `connectTimeout`：连接超时，默认 15 秒。
-- `receiveTimeout`：接收超时，默认 15 秒。
+- `receiveTimeout`：接收超时，默认 190 秒；AI 建议接口最多等待后端 3 分钟模型返回，前端需要略长于后端超时，避免过早断开。
 
 核心成员：
 
 - `dio`：暴露底层 Dio，只在确实需要添加 interceptor 或处理特殊能力时使用。
 - `authorizationHeader`：Authorization header 名称常量。
+- `_logName`：网络日志分类名，当前为 `api.client`。
+- `_maxLogLength`：单条日志最长输出长度，避免大响应刷屏。
 
 核心方法：
 
@@ -1276,6 +1282,11 @@ MobileViewport(
 - `post<T>(String path, ...)`：发送 POST 请求。
 - `put<T>(String path, ...)`：发送 PUT 请求。
 - `delete<T>(String path, ...)`：发送 DELETE 请求。
+- `_createLogInterceptor()`：创建统一请求日志拦截器；请求、响应和错误都会输出到 Flutter 控制台。
+- `_writeLog(String message)`：统一使用 `debugPrint` 输出日志；不要用 `dart:developer.log` 替代，避免 IDE 普通运行窗口看不到网络日志。
+- `_mergedHeaders(RequestOptions options)`：合并全局 header 和单次请求 header，供日志打印使用。
+- `_maskHeaders(...)` / `_maskSecret(...)`：日志脱敏工具，当前会隐藏 `Authorization`。
+- `_clipLog(String text)`：裁剪过长日志，避免图鉴、对局状态等大 JSON 把控制台刷满。
 
 用法：
 
@@ -1292,6 +1303,8 @@ apiClient.setBearerToken(token);
 
 - 后续页面、Controller、业务 service 不要直接 `Dio()`。
 - 新的接口服务应通过构造函数接收 `ApiClient`，方便测试和替换环境。
+- 网络日志必须优先在 `ApiClient` 层维护，避免每个 API 方法重复写日志。
+- 新增敏感 header 或敏感参数时，必须同步扩展 `_maskHeaders` 或新增脱敏逻辑。
 - 如果要新增拦截器、错误转换、日志、重试、上传下载等通用能力，优先扩展 `ApiClient` 或围绕它新增文件，并同步更新本文档。
 - 不要绕过 `ApiClient` 写一套新的网络封装；如确实需要替换网络层，先更新本文档说明原因和新用法。
 

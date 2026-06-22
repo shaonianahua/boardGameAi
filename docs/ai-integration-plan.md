@@ -72,11 +72,21 @@ AI_PROVIDER=deepseek
 DEEPSEEK_API_KEY=your_key
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_MODEL=deepseek-v4-flash
+DEEPSEEK_TIMEOUT_MS=180000
+SPLENDOR_AI_STYLE=balanced
 ```
+
+当前后端已读取 `backend/.env`，真实 Key 只放本地 `.env`，不要提交到 git。
 
 ## DeepSeek 调用策略
 
 后端不直接把整篇策略文档每次都发给模型，而是使用固定 prompt + 当前局面 JSON。
+
+调试要求：
+
+- 后端日志只打印 provider、耗时、token usage、fallback 原因和安全诊断摘要。
+- 不打印 API Key，也不打印完整 prompt。
+- DeepSeek 返回空内容时，要记录 `finish_reason`、message 字段名、usage 和裁剪后的响应摘要，避免前端只看到“模型暂不可用”却无法判断原因。
 
 输入包含：
 
@@ -129,10 +139,10 @@ backend/src/features/splendor/ai/
 文件职责：
 
 - `ai-provider.ts`：定义统一 AI Provider 接口。
-- `deepseek-provider.ts`：封装 DeepSeek API 调用。
-- `heuristic-advisor.ts`：本地启发式 fallback，不消耗 token。
-- `advisor-service.ts`：读取状态、生成候选、调用模型、校验输出、写入 `AiDecision`。
-- `schemas.ts`：定义 AI 输入输出结构和校验。
+- `deepseek-provider.ts`：封装 DeepSeek OpenAI 兼容接口调用，读取 prompt 并要求 JSON 输出。
+- `heuristic-advisor.ts`：后续可拆出本地启发式 fallback；当前 fallback 暂保留在 `advisor-service.ts`。
+- `advisor-service.ts`：读取状态、生成候选、调用模型、校验输出；模型失败时回退启发式。
+- `schemas.ts`：定义 AI 输出结构校验，确保 `actionId` 必须命中合法行动。
 
 ## 后端需要新增的接口
 
@@ -187,10 +197,12 @@ POST /api/splendor/sessions/:sessionId/ai/stream
 接入 DeepSeek 前，后端还需要先实现：
 
 - 合法行动枚举：已具备，AI 建议只从后端合法行动列表中选择。
-- `actionId` 生成规则：第一版已用稳定 action key 生成，后续接模型时需要保持可校验。
-- 本地启发式 fallback：第一版已复用 Bot 评分逻辑。
+- `actionId` 生成规则：已用稳定 action key 生成，模型返回必须命中这些 ID。
+- DeepSeek Provider：已具备，调用 `POST /chat/completions`，使用 `response_format: json_object`。
+- 本地启发式 fallback：已复用 Bot 评分逻辑；模型未配置、余额不足、超时、JSON 非法、actionId 非法时都会回退。
 - 前端 AI 建议面板和加载状态：已具备非流式只读版本。
-- AI 输出 JSON 校验：接入真实模型前必须补上。
+- AI 输出 JSON 校验：已具备第一版，后续可继续加强字段长度、语言风格和安全策略。
+- AI 调试日志：已在 DeepSeek 空内容、非 JSON、非法 actionId 等失败路径保留安全摘要，方便真机触发一次后定位问题。
 - `AiDecision` 写库：需要后续补，便于复盘、调试和模型效果评估。
 
 否则模型没有稳定边界，容易输出非法操作。

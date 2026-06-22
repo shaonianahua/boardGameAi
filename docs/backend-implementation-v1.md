@@ -1,6 +1,6 @@
 # V1/V2 后端实现说明
 
-版本：2026-06-17
+版本：2026-06-18
 
 ## 实现范围
 
@@ -17,6 +17,7 @@
 - 保存当前 `GameState` 快照。
 - 保存每一步行动的前后状态快照。
 - V2 已新增本地 Bot 启发式行动接口。
+- V2 已新增 AI 策略建议接口，优先调用 DeepSeek，失败时回退本地启发式。
 
 当前后端用于建立前后端接口契约和存档能力，不承担线上联机能力。
 
@@ -30,10 +31,18 @@ backend/
 │   └── migrations/
 └── src/
     ├── server.ts
+    ├── env.ts
     ├── db/
     │   └── prisma.ts
     └── features/
         └── splendor/
+            ├── ai/
+            │   ├── ai-provider.ts
+            │   ├── deepseek-provider.ts
+            │   ├── schemas.ts
+            │   └── prompts/
+            │       └── splendor-advisor.md
+            ├── advisor-service.ts
             ├── catalog.ts
             ├── bot-advisor.ts
             ├── routes.ts
@@ -46,9 +55,15 @@ backend/
 文件职责：
 
 - `server.ts`：Fastify 服务入口，注册健康检查和璀璨宝石接口。
+- `env.ts`：读取后端本地 `.env`，当前用于数据库、端口和 DeepSeek 配置。
 - `db/prisma.ts`：PrismaClient 单例。
 - `features/splendor/catalog.ts`：璀璨宝石固定卡牌和贵族数据。
 - `features/splendor/bot-advisor.ts`：V2 本地 Bot 启发式策略，只从合法行动列表中选择行动，不直接修改状态。
+- `features/splendor/advisor-service.ts`：AI 建议编排，构造模型输入、调用 Provider、校验 actionId，并在失败时回退启发式建议。
+- `features/splendor/ai/ai-provider.ts`：AI Provider 抽象接口。
+- `features/splendor/ai/deepseek-provider.ts`：DeepSeek OpenAI 兼容接口调用实现。
+- `features/splendor/ai/schemas.ts`：模型 JSON 输出校验，确保 actionId 命中合法行动。
+- `features/splendor/ai/prompts/splendor-advisor.md`：璀璨宝石策略建议 prompt。
 - `features/splendor/types.ts`：GameState、Action、玩家、卡牌等 TypeScript 类型。
 - `features/splendor/state.ts`：创建初始对局状态、状态序列化和反序列化。
 - `features/splendor/rules.ts`：行动合法性校验和状态推进。
@@ -200,6 +215,43 @@ POST /api/splendor/sessions/:sessionId/bot/act
 - `actionRecord`：Bot 本次行动记录，`actorType` 为 `bot`。
 - `state`：更新后的完整 `GameState`。
 - `decision`：本地 Bot 启发式评分、原因和选中的行动。
+
+### AI 策略建议
+
+```text
+POST /api/splendor/sessions/:sessionId/ai/decide
+```
+
+用途：
+
+- 只返回给真人玩家参考的结构化建议，不执行行动。
+- 后端读取当前 `GameState`，生成合法行动，为每个合法行动生成稳定 `actionId`。
+- 优先调用 DeepSeek；模型返回必须是 JSON，且 `actionId` 必须命中合法行动。
+- 如果 DeepSeek 未配置、余额不足、超时、返回非法 JSON 或返回非法 actionId，后端自动回退本地启发式建议。
+
+返回：
+
+- `decision.actionId`：推荐行动 ID。
+- `decision.confidence`：置信度，0-1。
+- `decision.summary`：建议结论。
+- `decision.reasoning`：推荐理由。
+- `decision.alternatives`：备选行动说明。
+- `decision.threats`：对手威胁。
+- `decision.risks`：风险提示。
+- `selectedAction`：后端映射回的合法行动；前端只展示，不自动执行。
+
+后端配置：
+
+```env
+AI_PROVIDER=deepseek
+DEEPSEEK_API_KEY=your_deepseek_api_key
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-v4-flash
+DEEPSEEK_TIMEOUT_MS=180000
+SPLENDOR_AI_STYLE=balanced
+```
+
+真实 Key 只放 `backend/.env`，该文件已被 `.gitignore` 忽略。
 
 ## 当前规则能力
 

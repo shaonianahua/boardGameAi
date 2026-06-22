@@ -347,8 +347,24 @@ class SplendorTableController extends GetxController {
 
     isLoadingAiAdvice.value = true;
     try {
+      developer.log(
+        'start ai advice: session=${session.session.id}, '
+        'turn=${session.state.currentTurnIndex}, '
+        'player=${currentPlayer.seatIndex}/${currentPlayer.name}',
+        name: 'splendor.ai',
+      );
       final response = await _splendorApi.requestAiAdvice(session.session.id);
       aiAdvice.value = response;
+      developer.log(
+        'ai advice success: session=${session.session.id}, '
+        'actionId=${response.decision.actionId}, '
+        'confidence=${response.decision.confidence}, '
+        'selected=${response.selectedAction?.action.payload}, '
+        'fallback=${_isHeuristicFallback(response)}, '
+        'summary=${response.decision.summary}, '
+        'reasoning=${response.decision.reasoning.join(' | ')}',
+        name: 'splendor.ai',
+      );
       return response;
     } on ApiException catch (error) {
       developer.log(
@@ -371,6 +387,12 @@ class SplendorTableController extends GetxController {
     return null;
   }
 
+  bool _isHeuristicFallback(SplendorAiAdviceResponse response) {
+    return response.decision.reasoning.any(
+      (reason) => reason.contains('模型建议暂不可用') || reason.contains('回退本地启发式'),
+    );
+  }
+
   String? _currentPlayerTypeName(SplendorGameState? state) {
     if (state == null ||
         state.currentPlayerIndex < 0 ||
@@ -384,7 +406,7 @@ class SplendorTableController extends GetxController {
     Get.snackbar(
       '璀璨宝石',
       message,
-      snackPosition: SnackPosition.BOTTOM,
+      snackPosition: SnackPosition.TOP,
       margin: const EdgeInsets.all(16),
       borderRadius: 8,
       duration: const Duration(seconds: 2),

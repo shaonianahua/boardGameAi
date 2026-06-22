@@ -1,5 +1,7 @@
-import { cardById } from './catalog.js';
+import { cardById, nobleById } from './catalog.js';
 import { scoreSplendorLegalAction } from './bot-advisor.js';
+import type { SplendorAdvisorInput, SplendorAiProvider } from './ai/ai-provider.js';
+import { DeepSeekSplendorProvider } from './ai/deepseek-provider.js';
 import type {
   SplendorAction,
   SplendorGameState,
@@ -30,7 +32,7 @@ interface ScoredLegalAction {
   reason: string;
 }
 
-function actionStableKey(action: SplendorAction): string {
+export function actionStableKey(action: SplendorAction): string {
   if (action.type === 'take_tokens') {
     return `take:${Object.entries(action.tokens)
       .filter(([, amount]) => (amount ?? 0) > 0)
@@ -93,12 +95,35 @@ function threatLines(state: SplendorGameState, player: SplendorPlayerState): str
     .map((opponent) => `${opponent.name} 当前 ${opponent.score} 分，预留 ${opponent.reservedCards.length} 张。`);
 }
 
-/// 使用本地启发式生成 AI 建议接口的第一版结构化输出。
-///
-/// 这里不调用大模型，也不执行行动；它只把当前合法行动评分后转成建议面板可展示的数据。
-export function createSplendorAdvice(
+function createScoredActions(
   state: SplendorGameState,
   legalActions: SplendorLegalActionsResult,
+): ScoredLegalAction[] {
+  const player = state.players[legalActions.playerIndex];
+  if (!player) {
+    throw new Error('advice player not found');
+  }
+
+  return legalActions.actions
+    .map<ScoredLegalAction>((legalAction) => {
+      const scored = scoreSplendorLegalAction(state, player, legalAction);
+      return {
+        actionId: actionStableKey(legalAction.action),
+        legalAction,
+        score: scored.score,
+        reason: scored.reason,
+      };
+    })
+    .sort((left, right) => right.score - left.score);
+}
+
+/// 使用本地启发式生成 AI 建议接口 fallback 输出。
+///
+/// 模型未配置、超时、返回非法 JSON 或推荐非法 actionId 时都会回退到这里。
+export function createHeuristicSplendorAdvice(
+  state: SplendorGameState,
+  legalActions: SplendorLegalActionsResult,
+  fallbackReason?: string,
 ): SplendorAdviceResponse {
   const player = state.players[legalActions.playerIndex];
   if (!player) {
@@ -119,18 +144,7 @@ export function createSplendorAdvice(
     };
   }
 
-  const scoredActions = legalActions.actions
-    .map<ScoredLegalAction>((legalAction) => {
-      const scored = scoreSplendorLegalAction(state, player, legalAction);
-      return {
-        actionId: actionStableKey(legalAction.action),
-        legalAction,
-        score: scored.score,
-        reason: scored.reason,
-      };
-    })
-    .sort((left, right) => right.score - left.score);
-
+  const scoredActions = createScoredActions(state, legalActions);
   const best = scoredActions[0];
   const second = scoredActions[1];
   const confidenceGap = second == null ? 0.82 : Math.min(0.9, Math.max(0.52, (best.score - second.score) / 80 + 0.58));
@@ -144,6 +158,7 @@ export function createSplendorAdvice(
       reasoning: [
         best.reason,
         `该行动在当前合法行动中评分最高，适合 ${player.name} 当前资源和节奏。`,
+        ...(fallbackReason ? [`模型建议暂不可用，已回退本地启发式：${fallbackReason}`] : []),
       ],
       alternatives: scoredActions
         .slice(1, 4)
@@ -155,4 +170,145 @@ export function createSplendorAdvice(
       ],
     },
   };
+}
+
+/// 生成 AI 建议：优先调用 DeepSeek，失败时回退本地启发式。
+///
+/// 这里不执行行动，只把模型返回的 actionId 映射回后端合法行动，保证前端只能看到可执行建议。
+export async function createSplendorAdvice(
+  state: SplendorGameState,
+  legalActions: SplendorLegalActionsResult,
+): Promise<SplendorAdviceResponse> {
+  const provider = createConfiguredProvider();
+  if (!provider) {
+    return createHeuristicSplendorAdvice(state, legalActions, '未配置 DeepSeek API Key');
+  }
+  if (legalActions.actions.length === 0) {
+    return createHeuristicSplendorAdvice(state, legalActions);
+  }
+
+  try {
+    const input = createAdvisorInput(state, legalActions);
+    console.info(
+      `[splendor.ai] request provider=${provider.constructor.name} ` +
+      `player=${legalActions.playerIndex} legalActions=${input.legalActions.length} ` +
+      `catalogCards=${input.catalog.cards.length} nobles=${input.catalog.nobles.length}`,
+    );
+    const startedAt = Date.now();
+    const result = provider instanceof DeepSeekSplendorProvider
+      ? await provider.decideWithMetadata(input)
+      : { decision: await provider.decide(input), usage: null };
+    const decision = result.decision;
+    const selectedAction = decision.actionId == null
+      ? null
+      : legalActions.actions.find((legalAction) => actionStableKey(legalAction.action) === decision.actionId) ?? null;
+    if (decision.actionId != null && selectedAction == null) {
+      throw new Error(`model selected unavailable action: ${decision.actionId}`);
+    }
+    console.info(
+      `[splendor.ai] success provider=${provider.constructor.name} ` +
+      `actionId=${decision.actionId ?? 'null'} confidence=${decision.confidence} ` +
+      `durationMs=${Date.now() - startedAt} ` +
+      `tokens=${formatUsage(result.usage)}`,
+    );
+    return { decision, selectedAction };
+  } catch (error) {
+    const reason = errorMessage(error);
+    console.warn('[splendor.ai] DeepSeek advice failed, fallback to heuristic:', reason);
+    return createHeuristicSplendorAdvice(state, legalActions, reason);
+  }
+}
+
+function createConfiguredProvider(): SplendorAiProvider | null {
+  const provider = process.env.AI_PROVIDER ?? 'deepseek';
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+  if (provider !== 'deepseek' || !apiKey) {
+    return null;
+  }
+
+  return new DeepSeekSplendorProvider({
+    apiKey,
+    baseUrl: process.env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com',
+    model: process.env.DEEPSEEK_MODEL ?? 'deepseek-v4-flash',
+    timeoutMs: Number(process.env.DEEPSEEK_TIMEOUT_MS ?? 180000),
+  });
+}
+
+function createAdvisorInput(
+  state: SplendorGameState,
+  legalActions: SplendorLegalActionsResult,
+): SplendorAdvisorInput {
+  const scoredActions = createScoredActions(state, legalActions);
+  return {
+    gameState: createAdvisorGameState(state),
+    catalog: createRelevantCatalog(state),
+    legalActions: scoredActions.map((item) => ({
+      actionId: item.actionId,
+      label: `${item.legalAction.label} | heuristic=${item.score.toFixed(1)} | ${item.reason}`,
+      action: item.legalAction.action,
+    })),
+    currentPlayerIndex: legalActions.playerIndex,
+    style: process.env.SPLENDOR_AI_STYLE ?? 'balanced',
+  };
+}
+
+function createAdvisorGameState(state: SplendorGameState): SplendorAdvisorInput['gameState'] {
+  return {
+    ...state,
+    decks: {
+      level1Count: state.decks.level1.length,
+      level2Count: state.decks.level2.length,
+      level3Count: state.decks.level3.length,
+    },
+    players: state.players.map((player) => ({
+      seatIndex: player.seatIndex,
+      name: player.name,
+      type: player.type,
+      score: player.score,
+      tokens: player.tokens,
+      bonuses: player.bonuses,
+      purchasedCards: player.purchasedCards,
+      reservedCards: player.reservedCards,
+      nobles: player.nobles,
+    })),
+  };
+}
+
+function createRelevantCatalog(state: SplendorGameState): SplendorAdvisorInput['catalog'] {
+  const cardIds = new Set<string>([
+    ...state.markets.level1,
+    ...state.markets.level2,
+    ...state.markets.level3,
+    ...state.players.flatMap((player) => [
+      ...player.purchasedCards,
+      ...player.reservedCards,
+    ]),
+  ]);
+
+  return {
+    cards: [...cardIds]
+      .map((cardId) => cardById.get(cardId))
+      .filter((card): card is NonNullable<typeof card> => card != null),
+    nobles: state.nobles
+      .map((nobleId) => nobleById.get(nobleId))
+      .filter((noble): noble is NonNullable<typeof noble> => noble != null),
+  };
+}
+
+function errorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : 'unknown model error';
+  return message.replace(/\s+/g, ' ').slice(0, 300);
+}
+
+function formatUsage(
+  usage: {
+    promptTokens: number | null;
+    completionTokens: number | null;
+    totalTokens: number | null;
+  } | null,
+): string {
+  if (!usage) {
+    return 'unknown';
+  }
+  return `prompt:${usage.promptTokens ?? '?'} completion:${usage.completionTokens ?? '?'} total:${usage.totalTokens ?? '?'}`;
 }
