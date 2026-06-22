@@ -184,13 +184,13 @@ POST /api/splendor/sessions/:sessionId/ai/decide
 }
 ```
 
-流式版本可以后续增加：
+流式版本已新增：
 
 ```text
 POST /api/splendor/sessions/:sessionId/ai/stream
 ```
 
-流式接口优先输出展示内容，最终再输出结构化 `decision`。如果 V2 第一版非流式已经满足演示，可以等 UI 稳定后再实现流式。
+流式接口优先输出展示内容，最终再输出结构化 `decision`。后端调用 DeepSeek `stream: true`，把模型自然语言 chunk 转成业务 `delta` 事件立即发送；模型最后输出 `<FINAL_JSON>...</FINAL_JSON>`，后端拼完整后解析、校验 `actionId`，再发送 `result` 事件。前端 `SplendorAiAdvicePanel` 会展示逐段分析文本，并在 `result` 事件到达后复用原结构化建议区块。
 
 ## 必须先补的能力
 
@@ -199,8 +199,10 @@ POST /api/splendor/sessions/:sessionId/ai/stream
 - 合法行动枚举：已具备，AI 建议只从后端合法行动列表中选择。
 - `actionId` 生成规则：已用稳定 action key 生成，模型返回必须命中这些 ID。
 - DeepSeek Provider：已具备，调用 `POST /chat/completions`，使用 `response_format: json_object`。
+- DeepSeek 原生流式 Provider：已具备，流式接口使用 `stream: true` 和专用 prompt，先输出自然语言分析，最后输出 `<FINAL_JSON>` 供后端解析。
 - 本地启发式 fallback：已复用 Bot 评分逻辑；模型未配置、余额不足、超时、JSON 非法、actionId 非法时都会回退。
 - 前端 AI 建议面板和加载状态：已具备非流式只读版本。
+- 前端 AI 流式展示：已具备，优先请求 `/ai/stream`，失败时回退 `/ai/decide`。
 - AI 输出 JSON 校验：已具备第一版，后续可继续加强字段长度、语言风格和安全策略。
 - AI 调试日志：已在 DeepSeek 空内容、非 JSON、非法 actionId 等失败路径保留安全摘要，方便真机触发一次后定位问题。
 - `AiDecision` 写库：需要后续补，便于复盘、调试和模型效果评估。

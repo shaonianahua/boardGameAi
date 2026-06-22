@@ -188,7 +188,7 @@ final apiClient = ApiClient(baseUrl: ApiConfig.defaultBaseUrl);
 - `splendorActions(String sessionId)`：提交行动和行动历史路径。
 - `splendorBotAct(String sessionId)`：V2 当前 Bot 玩家自动行动路径，对应 `POST /api/splendor/sessions/:sessionId/bot/act`。
 - `splendorAiDecision(String sessionId)`：V2 AI 建议 / AI 执行路径，计划对应 `POST /api/splendor/sessions/:sessionId/ai/decide`。
-- `splendorAiStream(String sessionId)`：V2 后续流式建议路径，计划对应 `POST /api/splendor/sessions/:sessionId/ai/stream`。
+- `splendorAiStream(String sessionId)`：V2 AI 流式建议路径，对应 `POST /api/splendor/sessions/:sessionId/ai/stream`。
 
 用法：
 
@@ -224,7 +224,8 @@ final path = ApiPaths.splendorActions(sessionId);
 - `getActions(String sessionId)`：调用 `GET /api/splendor/sessions/:sessionId/actions`。
 - `actBot(String sessionId)`：V2 调用 `POST /api/splendor/sessions/:sessionId/bot/act`，让当前 Bot 玩家由后端选择并执行一个合法行动。
 - `requestAiAdvice(String sessionId)`：V2 调用 `POST /api/splendor/sessions/:sessionId/ai/decide` 获取结构化 AI 建议；只做请求和模型转换，不直接执行行动。
-- `requestAiAdviceStream(...)`：V2 后续计划新增，用于流式策略面板；第一版可以先不实现。
+- `requestAiAdviceStream(String sessionId)`：V2 调用 `POST /api/splendor/sessions/:sessionId/ai/stream` 获取 SSE 流式建议事件；事件包含 progress、delta、result 和 done，result 会携带最终结构化建议。
+- `_streamLog(String message)`：AI 流式接口专用日志，输出原始 chunk、SSE block 和解析后的业务事件，日志前缀为 `splendor.ai.stream`。
 
 用法：
 
@@ -340,6 +341,7 @@ try {
 - `SplendorBotActionResponse`
 - `SplendorAiAdviceDecision`
 - `SplendorAiAdviceResponse`
+- `SplendorAiAdviceStreamEvent`
 - `SplendorActionsResponse`
 
 ### `frontend/lib/models/splendor_models.dart`
@@ -810,6 +812,7 @@ await CardActionsSheet.show(
 - `isActingBot`：Bot 自动行动状态。
 - `isLoadingAiAdvice`：AI 建议请求状态。
 - `aiAdvice`：最近一次 AI 建议响应，供底部策略面板展示。
+- `aiAdviceStreamLines`：AI 流式建议逐段文本，供底部策略面板展示实时分析过程。
 
 核心方法：
 
@@ -820,7 +823,10 @@ await CardActionsSheet.show(
 - `loadActionHistory()`：拉取当前对局行动历史。
 - `submitLegalAction(SplendorLegalAction legalAction)`：提交后端返回的合法行动。
 - `actCurrentBot()`：调用后端 Bot 自动行动接口，更新状态并提示 Bot 决策原因。
-- `requestAiAdvice()`：为当前真人玩家请求结构化 AI 建议；不执行推荐行动。
+- `requestAiAdvice()`：为当前真人玩家请求 AI 建议；优先走流式接口，失败时回退非流式接口，不执行推荐行动。
+- `_requestAiAdviceFallback(String sessionId)`：AI 流式接口失败后的非流式兜底请求，保证建议功能不中断。
+- `_appendAiAdviceStreamText(String text, { required bool appendToLastLine })`：把流式文本追加到实时分析展示区；模型 delta 默认合并到上一行，避免一个字一个字变成多行。
+- `_AiAdviceStreamDisplayFilter`：过滤模型原生流中的 `<FINAL_JSON>`、半截 `<FINAL_JSON`、JSON 片段和 markdown 标识，只把自然语言分析交给 UI 展示。
 - `_scheduleBotAutoAction()`：当前玩家是 Bot 时延迟触发自动行动；连续 Bot 会在成功行动后继续推进。
 - `_showAwardedNobleMessage(...)`：提交行动后对比玩家前后贵族列表，如果本回合自动获得贵族，则显示底部提示。
 - `_nobleById(String nobleId)`：从已加载 catalog 中查找贵族，仅用于获得贵族提示文案。
@@ -841,7 +847,7 @@ controller.initialize(sessionResponse);
 - 行动历史以后端 `game_actions` 为准；自动贵族事件由后端记录为 `noble_visit`，前端只负责翻译展示。
 - 贵族获得由后端在回合收尾自动结算；前端只根据提交行动前后的 `player.nobles` 差异提示结果，不提供手动选择贵族入口。
 - Bot 决策由后端 `bot-advisor.ts` 负责，前端 controller 只做自动触发和状态刷新，不在前端复刻策略。
-- AI 建议接口由 `SplendorApi.requestAiAdvice` 统一封装，页面和 controller 不直接拼路径。
+- AI 建议接口由 `SplendorApi.requestAiAdvice` / `requestAiAdviceStream` 统一封装，页面和 controller 不直接拼路径。
 - AI 建议请求开始、成功和失败都会在 Flutter 日志中以 `splendor.ai` / `splendor.api` 分类输出，方便真机调试模型是否真实返回。
 - 弃宝石、AI 建议多步编排或本地规则服务等复杂流程出现后，优先抽到 `services/splendor/`。
 
@@ -1088,22 +1094,34 @@ final lookup = SplendorCatalogLookup(controller.catalog.value);
 职责：
 
 - 真人玩家点击“AI 建议”后展示结构化策略建议。
+- 面板打开时不自动请求接口；优先展示 controller 中保留的上一条建议。
+- 用户点击面板内“获取 AI 建议 / 重新获取建议”按钮后，才调用后端 AI 建议接口。
+- 支持展示 AI 流式接口逐段返回的实时分析文本。
+- 生成中展示完整实时分析；生成完成且已有最终建议时，实时分析区域只保留最后 3 行摘要。
 - 展示推荐结论、推荐行动、置信度、推荐理由、备选行动、对手威胁和风险提示。
 - 第一版只读展示，不提供采纳建议或自动执行行动。
 
 核心类：
 
 - `SplendorAiAdvicePanel`
+- `_RequestAdviceButton`
+- `_StreamAdviceSection`
+- `_EmptyAdviceState`
 
 核心参数：
 
-- `advice`：`SplendorAiAdviceResponse`，来自 `SplendorApi.requestAiAdvice`。
+- `advice`：可空的 `SplendorAiAdviceResponse`，来自 controller 中缓存的最近一次 `SplendorApi.requestAiAdvice` 结果。
+- `streamLines`：AI 流式接口逐段返回的文本列表，来自 controller 的 `aiAdviceStreamLines`。
+- `isLoading`：当前是否正在生成 AI 建议，用于禁用面板内按钮和显示加载文案。
+- `onRequestAdvice`：面板内请求建议按钮回调，由 controller 负责实际接口调用。
 - `onClose`：关闭 bottom sheet 的回调。
 - `scrollController`：可选滚动控制器，bottom sheet 内传入以协调拖拽滚动。
 
 维护规则：
 
-- 面板不直接请求接口，不直接提交行动。
+- 面板不直接持有 API；只通过 `onRequestAdvice` 通知 controller 请求接口，不直接提交行动。
+- 生成期间 `isLoading=true` 时，面板内建议按钮必须禁用，避免重复请求模型。
+- 关闭再打开 AI 建议面板时，应继续展示 controller 缓存的上一条建议，避免用户误关弹窗后看不到结果。
 - 面板只展示后端已经校验过的推荐行动和解释。
 - 后续流式输出、桌面高亮或“采纳建议”应在保持该面板只负责展示的前提下新增明确回调。
 
@@ -1253,6 +1271,7 @@ MobileViewport(
 
 - 统一封装 Dio 网络请求。
 - 提供全项目共享的 HTTP `get`、`post`、`put`、`delete` 方法。
+- 提供 `postTextStream` 读取 UTF-8 文本流，当前用于 AI 建议 SSE。
 - 统一配置 JSON 请求、JSON 响应、连接超时和接收超时。
 - 提供 `setBearerToken` 管理 Authorization header。
 - 统一通过 Dio interceptor 打印接口日志，使用 `debugPrint` 输出到 Flutter 控制台，包含请求路径、query、body、header、响应状态和响应数据。
@@ -1280,6 +1299,7 @@ MobileViewport(
 - `setBearerToken(String? token)`：设置或清除 `Authorization: Bearer xxx`。
 - `get<T>(String path, ...)`：发送 GET 请求。
 - `post<T>(String path, ...)`：发送 POST 请求。
+- `postTextStream(String path, ...)`：发送 POST 请求并读取文本流，适合 SSE 或其它逐段返回文本的接口；会打印 stream 响应头和每个原始文本 chunk。
 - `put<T>(String path, ...)`：发送 PUT 请求。
 - `delete<T>(String path, ...)`：发送 DELETE 请求。
 - `_createLogInterceptor()`：创建统一请求日志拦截器；请求、响应和错误都会输出到 Flutter 控制台。

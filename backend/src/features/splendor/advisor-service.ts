@@ -25,6 +25,12 @@ export interface SplendorAdviceResponse {
   selectedAction: SplendorLegalAction | null;
 }
 
+export type SplendorAdviceStreamEvent =
+  | { type: 'progress'; text: string }
+  | { type: 'delta'; text: string }
+  | { type: 'result'; response: SplendorAdviceResponse }
+  | { type: 'done' };
+
 interface ScoredLegalAction {
   actionId: string;
   legalAction: SplendorLegalAction;
@@ -217,6 +223,71 @@ export async function createSplendorAdvice(
     console.warn('[splendor.ai] DeepSeek advice failed, fallback to heuristic:', reason);
     return createHeuristicSplendorAdvice(state, legalActions, reason);
   }
+}
+
+/// 生成 AI 建议流式事件。
+///
+/// 优先消费 DeepSeek 原生 stream:true 输出：自然语言分析会边生成边转发，
+/// 最终 JSON 在后端拼完整后校验，并以 result 事件返回结构化建议。
+export async function* createSplendorAdviceStream(
+  state: SplendorGameState,
+  legalActions: SplendorLegalActionsResult,
+): AsyncGenerator<SplendorAdviceStreamEvent> {
+  yield { type: 'progress', text: '正在读取当前桌面、玩家资源和公开卡牌。' };
+  yield { type: 'progress', text: `已找到 ${legalActions.actions.length} 个当前合法行动。` };
+
+  const provider = createConfiguredProvider();
+  if (!provider || !(provider instanceof DeepSeekSplendorProvider) || legalActions.actions.length === 0) {
+    const advice = createHeuristicSplendorAdvice(
+      state,
+      legalActions,
+      !provider ? '未配置 DeepSeek API Key' : undefined,
+    );
+    yield { type: 'delta', text: `结论：${advice.decision.summary}` };
+    yield { type: 'result', response: advice };
+    yield { type: 'done' };
+    return;
+  }
+
+  try {
+    const input = createAdvisorInput(state, legalActions);
+    const startedAt = Date.now();
+    console.info(
+      `[splendor.ai] stream request provider=${provider.constructor.name} ` +
+      `player=${legalActions.playerIndex} legalActions=${input.legalActions.length} ` +
+      `catalogCards=${input.catalog.cards.length} nobles=${input.catalog.nobles.length}`,
+    );
+    yield { type: 'progress', text: '模型已开始实时分析。' };
+
+    for await (const event of provider.decideStreamWithMetadata(input)) {
+      if (event.type === 'delta') {
+        yield { type: 'delta', text: event.text };
+        continue;
+      }
+
+      const decision = event.result.decision;
+      const selectedAction = decision.actionId == null
+        ? null
+        : legalActions.actions.find((legalAction) => actionStableKey(legalAction.action) === decision.actionId) ?? null;
+      if (decision.actionId != null && selectedAction == null) {
+        throw new Error(`model selected unavailable action: ${decision.actionId}`);
+      }
+      console.info(
+        `[splendor.ai] stream success provider=${provider.constructor.name} ` +
+        `actionId=${decision.actionId ?? 'null'} confidence=${decision.confidence} ` +
+        `durationMs=${Date.now() - startedAt} ` +
+        `tokens=${formatUsage(event.result.usage)}`,
+      );
+      yield { type: 'result', response: { decision, selectedAction } };
+    }
+  } catch (error) {
+    const reason = errorMessage(error);
+    console.warn('[splendor.ai] DeepSeek stream failed, fallback to heuristic:', reason);
+    const advice = createHeuristicSplendorAdvice(state, legalActions, reason);
+    yield { type: 'delta', text: `模型流式建议暂不可用，已切换为本地建议：${advice.decision.summary}` };
+    yield { type: 'result', response: advice };
+  }
+  yield { type: 'done' };
 }
 
 function createConfiguredProvider(): SplendorAiProvider | null {

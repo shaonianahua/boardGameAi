@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
@@ -80,6 +83,59 @@ class ApiClient {
       onSendProgress: onSendProgress,
       onReceiveProgress: onReceiveProgress,
     );
+  }
+
+  /// 发送 POST 请求并读取 UTF-8 文本流。
+  ///
+  /// 当前用于 AI 建议 SSE 流式接口；普通 JSON 接口继续使用 [post]。
+  Future<Stream<String>> postTextStream(
+    String path, {
+    Object? data,
+    Map<String, dynamic>? queryParameters,
+    Options? options,
+    CancelToken? cancelToken,
+  }) async {
+    final response = await _dio.post<ResponseBody>(
+      path,
+      data: data,
+      queryParameters: queryParameters,
+      options: (options ?? Options()).copyWith(
+        responseType: ResponseType.stream,
+      ),
+      cancelToken: cancelToken,
+    );
+
+    final body = response.data;
+    if (body == null) {
+      throw DioException(
+        requestOptions: response.requestOptions,
+        response: response,
+        type: DioExceptionType.badResponse,
+        message: 'empty stream response',
+      );
+    }
+
+    _writeLog(
+      _clipLog(
+        'stream response ${response.requestOptions.method} ${response.requestOptions.uri}\n'
+        'status=${response.statusCode}\n'
+        'headers=${_stringify(response.headers.map)}',
+      ),
+    );
+
+    return body.stream
+        .transform(
+          StreamTransformer<Uint8List, String>.fromBind(utf8.decoder.bind),
+        )
+        .map((chunk) {
+          _writeLog(
+            _clipLog(
+              'stream chunk ${response.requestOptions.method} ${response.requestOptions.uri}\n'
+              'data=$chunk',
+            ),
+          );
+          return chunk;
+        });
   }
 
   /// 发送 PUT 请求，data 和 queryParameters 会在统一日志里打印。

@@ -240,6 +240,27 @@ POST /api/splendor/sessions/:sessionId/ai/decide
 - `decision.risks`：风险提示。
 - `selectedAction`：后端映射回的合法行动；前端只展示，不自动执行。
 
+### AI 流式策略建议
+
+```text
+POST /api/splendor/sessions/:sessionId/ai/stream
+```
+
+用途：
+
+- 以 `text/event-stream` 返回 AI 建议过程，让前端策略面板能逐段展示实时分析。
+- 后端仍然先读取 `GameState` 和合法行动，再调用 DeepSeek `stream: true` 获取模型原生流式输出。
+- 模型自然语言分析 chunk 会被后端转成 `delta` 事件立即发送；`<FINAL_JSON>` 内的结构化 JSON 只在后端拼完整后解析。
+- 最终 `result` 事件复用非流式接口的结构化建议。
+- 规则安全边界不变：最终推荐行动必须来自后端合法行动集合，模型失败时仍回退本地启发式。
+
+事件：
+
+- `progress`：后端准备和分析进度文本。
+- `delta`：可展示的建议片段，例如结论、理由、威胁或风险。
+- `result`：最终结构化 `{ decision, selectedAction }`。
+- `done`：流式输出结束。
+
 后端配置：
 
 ```env

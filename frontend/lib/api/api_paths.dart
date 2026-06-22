@@ -37,4 +37,9 @@ class ApiPaths {
   static String splendorAiDecision(String sessionId) {
     return '${splendorSession(sessionId)}/ai/decide';
   }
+
+  /// V2 AI 流式建议接口，后端以 SSE 事件逐段返回分析内容和最终结构化建议。
+  static String splendorAiStream(String sessionId) {
+    return '${splendorSession(sessionId)}/ai/stream';
+  }
 }

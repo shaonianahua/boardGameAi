@@ -57,6 +57,9 @@ class SplendorTableController extends GetxController {
   final Rxn<SplendorAiAdviceResponse> aiAdvice =
       Rxn<SplendorAiAdviceResponse>();
 
+  /// AI 建议流式输出文本，供底部策略面板做渐进展示。
+  final RxList<String> aiAdviceStreamLines = <String>[].obs;
+
   bool _isAutoAdvancingBot = false;
 
   /// 初始化桌面页所需数据。
@@ -324,9 +327,9 @@ class SplendorTableController extends GetxController {
     return false;
   }
 
-  /// 为当前真人玩家请求一份 AI 策略建议。
+  /// 为当前真人玩家请求一份 AI 策略建议，优先使用流式接口。
   ///
-  /// 只读取后端结构化建议，不执行推荐行动；调用方负责决定如何展示。
+  /// 流式失败时回退非流式接口；这里只更新展示状态，不执行推荐行动。
   Future<SplendorAiAdviceResponse?> requestAiAdvice() async {
     final session = sessionResponse.value;
     if (session == null) {
@@ -346,45 +349,120 @@ class SplendorTableController extends GetxController {
     }
 
     isLoadingAiAdvice.value = true;
+    aiAdviceStreamLines.clear();
+    final streamDisplayFilter = _AiAdviceStreamDisplayFilter();
     try {
       developer.log(
-        'start ai advice: session=${session.session.id}, '
+        'start ai advice stream: session=${session.session.id}, '
         'turn=${session.state.currentTurnIndex}, '
         'player=${currentPlayer.seatIndex}/${currentPlayer.name}',
         name: 'splendor.ai',
       );
-      final response = await _splendorApi.requestAiAdvice(session.session.id);
-      aiAdvice.value = response;
+
+      SplendorAiAdviceResponse? finalResponse;
+      await for (final event in _splendorApi.requestAiAdviceStream(
+        session.session.id,
+      )) {
+        final visibleText = switch (event.type) {
+          'delta' => streamDisplayFilter.append(event.text),
+          _ => event.text,
+        };
+        if (visibleText.trim().isNotEmpty) {
+          _appendAiAdviceStreamText(
+            visibleText,
+            appendToLastLine: event.type == 'delta',
+          );
+        }
+        if (event.type == 'result') {
+          streamDisplayFilter.stop();
+        }
+        if (event.type == 'done') {
+          final flushedText = streamDisplayFilter.flush();
+          if (flushedText.trim().isNotEmpty) {
+            aiAdviceStreamLines.add(flushedText);
+          }
+        }
+        if (event.text.isNotEmpty) {
+          developer.log(
+            'ai stream event: type=${event.type}, visible=${visibleText.isNotEmpty}, raw=${event.text}',
+            name: 'splendor.ai',
+          );
+        }
+        if (event.response != null) {
+          finalResponse = event.response;
+          aiAdvice.value = event.response;
+        }
+      }
+
+      if (finalResponse == null) {
+        throw const ApiException(
+          ApiError(code: 'EMPTY_AI_STREAM', message: 'AI 流式建议没有返回结果'),
+        );
+      }
+
       developer.log(
-        'ai advice success: session=${session.session.id}, '
-        'actionId=${response.decision.actionId}, '
-        'confidence=${response.decision.confidence}, '
-        'selected=${response.selectedAction?.action.payload}, '
-        'fallback=${_isHeuristicFallback(response)}, '
-        'summary=${response.decision.summary}, '
-        'reasoning=${response.decision.reasoning.join(' | ')}',
+        'ai advice stream success: session=${session.session.id}, '
+        'actionId=${finalResponse.decision.actionId}, '
+        'confidence=${finalResponse.decision.confidence}, '
+        'selected=${finalResponse.selectedAction?.action.payload}, '
+        'fallback=${_isHeuristicFallback(finalResponse)}, '
+        'summary=${finalResponse.decision.summary}, '
+        'lines=${aiAdviceStreamLines.length}',
         name: 'splendor.ai',
       );
-      return response;
+      return finalResponse;
     } on ApiException catch (error) {
       developer.log(
-        'ai advice api error: code=${error.error.code}, '
+        'ai advice stream api error: code=${error.error.code}, '
         'message=${error.error.message}, session=${session.session.id}',
         name: 'splendor.api',
         error: error,
       );
-      _showMessage(error.error.message);
+      return _requestAiAdviceFallback(session.session.id);
     } catch (error) {
       developer.log(
-        'ai advice unexpected error: session=${session.session.id}',
+        'ai advice stream unexpected error: session=${session.session.id}',
         name: 'splendor.api',
         error: error,
       );
-      _showMessage('获取 AI 建议失败：$error');
+      return _requestAiAdviceFallback(session.session.id);
     } finally {
       isLoadingAiAdvice.value = false;
     }
+  }
+
+  Future<SplendorAiAdviceResponse?> _requestAiAdviceFallback(
+    String sessionId,
+  ) async {
+    try {
+      aiAdviceStreamLines.add('流式建议暂不可用，正在切换为完整建议。');
+      final response = await _splendorApi.requestAiAdvice(sessionId);
+      aiAdvice.value = response;
+      aiAdviceStreamLines.add('完整建议已返回。');
+      return response;
+    } on ApiException catch (error) {
+      _showMessage(error.error.message);
+    } catch (error) {
+      _showMessage('获取 AI 建议失败：$error');
+    }
     return null;
+  }
+
+  void _appendAiAdviceStreamText(
+    String text, {
+    required bool appendToLastLine,
+  }) {
+    final cleanedText = text.trim();
+    if (cleanedText.isEmpty) {
+      return;
+    }
+    if (!appendToLastLine || aiAdviceStreamLines.isEmpty) {
+      aiAdviceStreamLines.add(cleanedText);
+      return;
+    }
+
+    aiAdviceStreamLines[aiAdviceStreamLines.length - 1] =
+        '${aiAdviceStreamLines.last}$cleanedText';
   }
 
   bool _isHeuristicFallback(SplendorAiAdviceResponse response) {
@@ -554,5 +632,88 @@ class SplendorTableController extends GetxController {
       'gold' => '金',
       _ => colorKey,
     };
+  }
+}
+
+/// AI 流式文本展示过滤器。
+///
+/// 模型原生流可能把 `<FINAL_JSON>` 和 JSON 片段拆成多个 chunk 返回；
+/// 这些内容只用于后端解析结构化建议，不应该直接展示给用户。
+class _AiAdviceStreamDisplayFilter {
+  static const _finalJsonMarkerStart = '<FINAL_JSON';
+  static const _finalJsonMarker = '<FINAL_JSON>';
+  static const _markerLookbehind = 20;
+
+  final StringBuffer _buffer = StringBuffer();
+  bool _stopped = false;
+
+  String append(String chunk) {
+    if (_stopped || chunk.isEmpty) {
+      return '';
+    }
+
+    _buffer.write(chunk);
+    final text = _buffer.toString();
+    final markerIndex = text.indexOf(_finalJsonMarkerStart);
+    if (markerIndex >= 0) {
+      _stopped = true;
+      _buffer.clear();
+      return _cleanVisibleText(text.substring(0, markerIndex));
+    }
+
+    final safeLength = text.length - _markerLookbehind;
+    if (safeLength <= 0) {
+      return '';
+    }
+
+    final visible = text.substring(0, safeLength);
+    _buffer
+      ..clear()
+      ..write(text.substring(safeLength));
+    return _cleanVisibleText(visible);
+  }
+
+  String flush() {
+    if (_stopped) {
+      _buffer.clear();
+      return '';
+    }
+    final visible = _cleanVisibleText(_buffer.toString());
+    _buffer.clear();
+    return visible;
+  }
+
+  void stop() {
+    _stopped = true;
+    _buffer.clear();
+  }
+
+  String _cleanVisibleText(String text) {
+    final cleanedText = text
+        .replaceAll('</FINAL_JSON>', '')
+        .replaceAll(_finalJsonMarker, '')
+        .replaceAll(_finalJsonMarkerStart, '')
+        .replaceAll('```json', '')
+        .replaceAll('```', '')
+        .trim();
+    if (_looksLikeJsonFragment(cleanedText)) {
+      return '';
+    }
+    return cleanedText;
+  }
+
+  bool _looksLikeJsonFragment(String text) {
+    if (text.isEmpty) {
+      return false;
+    }
+    final trimmedText = text.trimLeft();
+    return trimmedText.startsWith('{') ||
+        trimmedText.startsWith('"actionId"') ||
+        trimmedText.startsWith('"confidence"') ||
+        trimmedText.startsWith('"summary"') ||
+        trimmedText.startsWith('"reasoning"') ||
+        trimmedText.startsWith('"alternatives"') ||
+        trimmedText.startsWith('"threats"') ||
+        trimmedText.startsWith('"risks"');
   }
 }

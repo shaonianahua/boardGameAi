@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'dart:developer' as developer;
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 
 import '../models/api_models.dart';
 import '../models/splendor_models.dart';
@@ -18,6 +20,7 @@ class SplendorApi {
     : _apiClient = apiClient ?? ApiClient(baseUrl: ApiConfig.defaultBaseUrl);
 
   final ApiClient _apiClient;
+  static const _streamLogName = 'splendor.ai.stream';
 
   /// 调用 `GET /health` 检查后端服务是否可用。
   Future<Map<String, dynamic>> health() async {
@@ -108,6 +111,28 @@ class SplendorApi {
     return SplendorAiAdviceResponse.fromJson(_data(response));
   }
 
+  /// 调用 `POST /api/splendor/sessions/:sessionId/ai/stream` 获取 AI 流式建议事件。
+  ///
+  /// 返回事件包括 progress、delta、result 和 done；result 事件携带最终结构化建议。
+  Stream<SplendorAiAdviceStreamEvent> requestAiAdviceStream(
+    String sessionId,
+  ) async* {
+    final textStream = await _apiClient.postTextStream(
+      ApiPaths.splendorAiStream(sessionId),
+      data: const <String, dynamic>{},
+      options: Options(headers: const {'Accept': 'text/event-stream'}),
+    );
+
+    _streamLog('start stream session=$sessionId');
+    final buffer = StringBuffer();
+    await for (final chunk in textStream) {
+      _streamLog('raw chunk session=$sessionId data=$chunk');
+      buffer.write(chunk);
+      yield* _drainSseBuffer(buffer, flush: false);
+    }
+    yield* _drainSseBuffer(buffer, flush: true);
+  }
+
   /// 包装 Dio 请求，把后端非 2xx 错误体里的 `{ error }` 转成 `ApiException`。
   Future<Response<Map<String, dynamic>>> _request(
     Future<Response<Map<String, dynamic>>> Function() request,
@@ -161,5 +186,62 @@ class SplendorApi {
       return ApiError.fromJson(error);
     }
     return null;
+  }
+
+  Stream<SplendorAiAdviceStreamEvent> _drainSseBuffer(
+    StringBuffer buffer, {
+    required bool flush,
+  }) async* {
+    final text = buffer.toString();
+    final normalizedText = text.replaceAll('\r\n', '\n');
+    final eventBlocks = normalizedText.split('\n\n');
+    final completeBlocks = flush
+        ? eventBlocks
+        : eventBlocks.take(eventBlocks.length - 1);
+
+    buffer.clear();
+    if (!flush && eventBlocks.isNotEmpty) {
+      buffer.write(eventBlocks.last);
+    }
+
+    for (final block in completeBlocks) {
+      if (block.trim().isNotEmpty) {
+        _streamLog('sse block=$block');
+      }
+      final event = _parseSseBlock(block);
+      if (event != null) {
+        _streamLog(
+          'event type=${event.type} text=${event.text} '
+          'hasResponse=${event.response != null}',
+        );
+        yield event;
+      }
+    }
+  }
+
+  SplendorAiAdviceStreamEvent? _parseSseBlock(String block) {
+    final dataLines = block
+        .split('\n')
+        .where((line) => line.startsWith('data:'))
+        .map((line) => line.substring(5).trimLeft())
+        .join('\n')
+        .trim();
+    if (dataLines.isEmpty || dataLines == '[DONE]') {
+      return null;
+    }
+
+    final decoded = jsonDecode(dataLines);
+    if (decoded is! Map<String, dynamic>) {
+      return null;
+    }
+    final error = decoded['error'];
+    if (error is Map<String, dynamic>) {
+      throw ApiException(ApiError.fromJson(error));
+    }
+    return SplendorAiAdviceStreamEvent.fromJson(decoded);
+  }
+
+  void _streamLog(String message) {
+    debugPrint('[$_streamLogName] $message');
   }
 }

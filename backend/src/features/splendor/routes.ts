@@ -4,6 +4,7 @@ import {
   actSplendorBot,
   createSplendorSession,
   getSplendorAdvice,
+  getSplendorAdviceStream,
   getSplendorLegalActions,
   getSplendorSession,
   listSplendorActions,
@@ -103,6 +104,31 @@ export async function registerSplendorRoutes(app: FastifyInstance): Promise<void
       return await getSplendorAdvice(params.sessionId);
     } catch (error) {
       return reply.status(400).send(errorResponse(error));
+    }
+  });
+
+  app.post('/api/splendor/sessions/:sessionId/ai/stream', async (request, reply) => {
+    try {
+      const params = request.params as { sessionId: string };
+      const stream = await getSplendorAdviceStream(params.sessionId);
+      reply.raw.writeHead(200, {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache, no-transform',
+        Connection: 'keep-alive',
+      });
+
+      for await (const event of stream) {
+        reply.raw.write(`event: ${event.type}\n`);
+        reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
+      }
+      reply.raw.end();
+    } catch (error) {
+      if (!reply.raw.headersSent) {
+        return reply.status(400).send(errorResponse(error));
+      }
+      reply.raw.write(`event: error\n`);
+      reply.raw.write(`data: ${JSON.stringify(errorResponse(error))}\n\n`);
+      reply.raw.end();
     }
   });
 

@@ -297,11 +297,6 @@ class _SplendorTablePageState extends State<SplendorTablePage> {
   }
 
   Future<void> _showAiAdviceSheet() async {
-    final advice = await controller.requestAiAdvice();
-    if (!mounted || advice == null) {
-      return;
-    }
-
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -317,9 +312,11 @@ class _SplendorTablePageState extends State<SplendorTablePage> {
           maxChildSize: 0.9,
           builder: (context, scrollController) {
             return Obx(() {
-              final currentAdvice = controller.aiAdvice.value ?? advice;
               return SplendorAiAdvicePanel(
-                advice: currentAdvice,
+                advice: controller.aiAdvice.value,
+                streamLines: controller.aiAdviceStreamLines.toList(),
+                isLoading: controller.isLoadingAiAdvice.value,
+                onRequestAdvice: controller.requestAiAdvice,
                 scrollController: scrollController,
                 onClose: () => Navigator.of(context).pop(),
               );
@@ -649,7 +646,7 @@ class _AiAdviceButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return FilledButton.icon(
-      onPressed: isLoading || isDisabled ? null : onPressed,
+      onPressed: isDisabled ? null : onPressed,
       icon: isLoading
           ? SizedBox(
               width: 16.w,

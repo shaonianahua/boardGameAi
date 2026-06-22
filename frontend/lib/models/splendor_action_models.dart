@@ -405,6 +405,38 @@ class SplendorAiAdviceResponse {
   final SplendorLegalAction? selectedAction;
 }
 
+/// AI 建议流式接口的单个事件。
+///
+/// `progress` / `delta` 用于渐进展示文字，`result` 携带最终结构化建议。
+class SplendorAiAdviceStreamEvent {
+  /// 构造 AI 建议流式事件。
+  const SplendorAiAdviceStreamEvent({
+    required this.type,
+    required this.text,
+    required this.response,
+  });
+
+  /// 从 `POST /api/splendor/sessions/:sessionId/ai/stream` 的 SSE data 解析。
+  factory SplendorAiAdviceStreamEvent.fromJson(JsonMap json) {
+    return SplendorAiAdviceStreamEvent(
+      type: json['type'] as String? ?? 'delta',
+      text: json['text'] as String? ?? '',
+      response: json['response'] == null
+          ? null
+          : SplendorAiAdviceResponse.fromJson(json['response'] as JsonMap),
+    );
+  }
+
+  /// 事件类型，例如 progress、delta、result、done。
+  final String type;
+
+  /// 可直接展示在流式面板中的文字片段。
+  final String text;
+
+  /// 最终结构化建议；只有 result 事件会携带。
+  final SplendorAiAdviceResponse? response;
+}
+
 /// 行动历史接口响应。
 class SplendorActionsResponse {
   /// 构造行动历史响应。
