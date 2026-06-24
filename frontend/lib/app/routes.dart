@@ -1,6 +1,7 @@
 import 'package:get/get.dart';
 
 import '../pages/index/index_page.dart';
+import '../pages/online_room/online_room_page.dart';
 import '../pages/splendor/create_session/splendor_create_session_page.dart';
 import '../pages/splendor/splendor_table_page.dart';
 
@@ -19,9 +20,13 @@ class AppRoutes {
   /// 璀璨宝石对局桌面页。
   static const splendorTable = '/splendor/table';
 
+  /// 在线房间大厅页。
+  static const onlineRoom = '/online-room';
+
   /// GetX 页面配置。
   static final pages = <GetPage>[
     GetPage(name: index, page: () => const IndexPage()),
+    GetPage(name: onlineRoom, page: () => const OnlineRoomPage()),
     GetPage(
       name: splendorCreateSession,
       page: () => const SplendorCreateSessionPage(),

@@ -24,6 +24,7 @@ model GameSession {
   players     GamePlayer[]
   actions     GameAction[]
   aiDecisions AiDecision[]
+  onlineRooms OnlineRoom[]
 
   @@index([gameType])
   @@index([status])
@@ -83,4 +84,41 @@ model AiDecision {
 
   @@index([sessionId])
   @@index([playerIndex])
+}
+
+model OnlineRoom {
+  id        String   @id @default(cuid())
+  roomCode  String   @unique
+  gameType  String
+  status    String   @default("waiting")
+  hostSeatIndex Int?
+  sessionId String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  session GameSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  seats   OnlineRoomSeat[]
+
+  @@index([gameType])
+  @@index([status])
+  @@index([updatedAt])
+}
+
+model OnlineRoomSeat {
+  id          String   @id @default(cuid())
+  roomId      String
+  seatIndex   Int
+  playerName  String
+  clientId    String
+  controlType String
+  ready       Boolean  @default(false)
+  connected   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  room OnlineRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, seatIndex])
+  @@unique([roomId, clientId])
+  @@index([roomId])
 }

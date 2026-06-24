@@ -13,3 +13,12 @@
 - Flutter App 的 API 调用文件统一放在 `frontend/lib/api/`，数据模型统一放在 `frontend/lib/models/`；不要把 API 和 model 分散到各个模块目录中。
 - Flutter App 后续新增或修改 API、model、组件、widget、公共功能方法、核心业务方法时，必须写最基本的备注信息，说明用途、输入输出、对应接口或使用场景，保证阅读代码时不费劲；备注要有信息量，避免“设置值”“返回数据”这类无意义注释。
 - 工具类、封装方法、Controller 中声明的每一个方法都必须有基本注释；至少说清楚这个方法负责什么、何时使用，必要时说明输入输出和异常处理。
+
+## Flutter GetX 与 Controller 分层约定
+
+- 本项目 Flutter 端默认使用 GetX 管理页面状态；没有明确需求时，不额外引入第二套状态管理方案。
+- GetX Controller 主要负责页面状态和页面流程编排，不适合长期堆积复杂业务细节。
+- 尽量不要把这些内容直接堆进 Controller：接口请求细节、规则判断、参数拼装、上传下载、缓存读写、复杂校验、复杂计算、复杂数据索引、流式请求管理。
+- 普通接口请求应由 API / service 返回结果，Controller 自己接收结果并更新状态，不要让 API / service 直接操作 Controller。
+- 只有进度类、流式类、长任务类场景，才考虑用 callback 或 Stream 把中间状态回传给 Controller。
+- 如果某段逻辑明显可复用、可独立测试，或者和页面状态解耦，就优先拆到 `api/`、`services/`、`shared/` 或页面域内的 helper / manager。

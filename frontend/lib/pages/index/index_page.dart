@@ -30,6 +30,9 @@ class IndexPage extends StatelessWidget {
                   onStart: () {
                     Get.toNamed(AppRoutes.splendorCreateSession);
                   },
+                  onOnlineRoom: () {
+                    Get.toNamed(AppRoutes.onlineRoom);
+                  },
                 ),
               ),
             ),
@@ -95,9 +98,10 @@ class _Header extends StatelessWidget {
 }
 
 class _GameEntryCard extends StatelessWidget {
-  const _GameEntryCard({required this.onStart});
+  const _GameEntryCard({required this.onStart, required this.onOnlineRoom});
 
   final VoidCallback onStart;
+  final VoidCallback onOnlineRoom;
 
   @override
   Widget build(BuildContext context) {
@@ -167,6 +171,12 @@ class _GameEntryCard extends StatelessWidget {
               icon: const Icon(Icons.play_arrow_rounded),
               label: const Text('开始对局'),
             ),
+            SizedBox(height: 10.h),
+            OutlinedButton.icon(
+              onPressed: onOnlineRoom,
+              icon: const Icon(Icons.hub_outlined),
+              label: const Text('在线房间'),
+            ),
           ],
         ),
       ),
@@ -213,7 +223,14 @@ class _ProjectStagePanel extends StatelessWidget {
               icon: Icons.psychology_alt_outlined,
               color: AppColors.splendorBlue,
               label: 'AI 策略模块',
-              value: '后续',
+              value: 'V2',
+            ),
+            SizedBox(height: 10.h),
+            _StageRow(
+              icon: Icons.hub_outlined,
+              color: AppColors.primary,
+              label: '在线房间大厅',
+              value: 'MVP',
             ),
           ],
         ),

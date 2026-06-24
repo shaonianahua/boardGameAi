@@ -20,6 +20,7 @@
 - 真人回合支持“AI 建议”入口。
 - AI 建议面板展示推荐行动、理由、备选行动、对手威胁和风险。
 - 后续流式输出和桌面元素高亮可以复用同一套建议模型。
+- 在线对战先进入 V4 房间大厅 MVP，只做创建房间、加入房间、展示座位和订阅房间更新。
 
 暂不在首页或 UI 组件里写复杂规则逻辑。页面负责展示和收集用户操作，规则判断和状态变更放到 `services/`。
 
@@ -31,6 +32,7 @@ frontend/lib/
 ├── api/
 │   ├── api_config.dart
 │   ├── api_paths.dart
+│   ├── online_api.dart
 │   └── splendor_api.dart
 ├── app/
 │   ├── app_colors.dart
@@ -39,6 +41,7 @@ frontend/lib/
 │   └── theme.dart
 ├── models/
 │   ├── api_models.dart
+│   ├── online_room_models.dart
 │   ├── splendor_action_models.dart
 │   ├── splendor_base_models.dart
 │   ├── splendor_catalog_models.dart
@@ -48,6 +51,10 @@ frontend/lib/
 ├── pages/
 │   ├── index/
 │   │   └── index_page.dart
+│   ├── online_room/
+│   │   ├── controller/
+│   │   │   └── online_room_controller.dart
+│   │   └── online_room_page.dart
 │   └── splendor/
 │       ├── splendor_table_page.dart
 │       ├── create_session/
@@ -168,6 +175,11 @@ final apiClient = ApiClient(baseUrl: ApiConfig.defaultBaseUrl);
 --dart-define=API_BASE_URL=http://你的电脑局域网IP:3000
 ```
 
+打包注意：
+
+- Android release 包需要在主清单里保留 `INTERNET` 权限，并允许本地 HTTP 明文访问；否则安装到别的手机后会出现“能打开 App，但请求后端失败”的情况。
+- iOS release 包如果访问本地 `http://` 后端，需要放开 ATS 或配置等价的本地网络访问例外；否则同样会被系统拦截。
+
 ### `frontend/lib/api/api_paths.dart`
 
 职责：
@@ -192,6 +204,10 @@ final apiClient = ApiClient(baseUrl: ApiConfig.defaultBaseUrl);
 - `splendorAiAct(String sessionId)`：V2 AI 玩家自动行动路径，对应 `POST /api/splendor/sessions/:sessionId/ai/act`；模型失败时后端回退本地 Bot。
 - `splendorAiDecision(String sessionId)`：V2 AI 建议 / AI 执行路径，计划对应 `POST /api/splendor/sessions/:sessionId/ai/decide`。
 - `splendorAiStream(String sessionId)`：V2 AI 流式建议路径，对应 `POST /api/splendor/sessions/:sessionId/ai/stream`。
+- `onlineRooms`：在线房间创建路径，对应 `POST /api/online/rooms`。
+- `onlineRoomsJoin`：在线房间加入路径，对应 `POST /api/online/rooms/join`。
+- `onlineRoom(String roomCode)`：在线房间查询路径，对应 `GET /api/online/rooms/:roomCode`。
+- `onlineRoomEvents(String roomCode)`：在线房间 WebSocket 事件路径，对应 `/api/online/rooms/:roomCode/events`。
 
 用法：
 
@@ -203,6 +219,44 @@ final path = ApiPaths.splendorActions(sessionId);
 
 - 新增接口时先在 `ApiPaths` 登记 path。
 - API 调用方法从 `ApiPaths` 取 path，不在方法里直接写字符串。
+
+### `frontend/lib/api/online_api.dart`
+
+职责：
+
+- 统一封装在线房间接口。
+- 当前只覆盖 V4 房间大厅 MVP，不处理在线始游戏和提交行动。
+- REST 请求复用 `ApiClient`，WebSocket 订阅使用 `dart:io WebSocket`。
+
+核心类：
+
+- `OnlineApi`
+
+核心方法：
+
+- `createRoom(CreateOnlineRoomInput input)`：调用 `POST /api/online/rooms` 创建房间，返回 `OnlineRoom` 快照。
+- `joinRoom(JoinOnlineRoomInput input)`：调用 `POST /api/online/rooms/join` 加入房间，返回 `OnlineRoom` 快照。
+- `getRoom(String roomCode)`：调用 `GET /api/online/rooms/:roomCode` 查询房间快照。
+- `watchRoomEvents(String roomCode)`：连接 `WebSocket /api/online/rooms/:roomCode/events`，持续返回 `OnlineRoomEvent`。收到后端标准错误时转成 `ApiException`。
+- `_request(...)`：包装 Dio 请求，把后端 `{ error }` 响应转成 `ApiException`。
+- `_data(...)`：提取 REST 响应体，并处理标准错误体。
+- `_errorFromData(...)`：从响应体里提取后端错误对象。
+- `_webSocketUrl(String path)`：根据 `ApiConfig.defaultBaseUrl` 把 HTTP path 转成 WebSocket URL。
+
+用法：
+
+```dart
+final onlineApi = OnlineApi();
+final room = await onlineApi.createRoom(
+  const CreateOnlineRoomInput(hostName: '玩家1'),
+);
+```
+
+维护规则：
+
+- 在线房间接口路径必须先登记在 `ApiPaths`。
+- 页面和 Controller 不直接拼 URL。
+- 后续如果新增开始游戏、提交在线行动，应继续补在 `OnlineApi`，不要散到页面。
 
 ### `frontend/lib/api/splendor_api.dart`
 
@@ -270,6 +324,34 @@ try {
   // error.error.code / error.error.message
 }
 ```
+
+### `frontend/lib/models/online_room_models.dart`
+
+职责：
+
+- 维护在线房间 REST 和 WebSocket 共同使用的数据模型。
+- 对齐后端 `features/online` 模块，不随意新增后端没有的业务字段。
+
+核心模型：
+
+- `OnlineRoomStatus`：在线房间状态，包含 `waiting` / `playing` / `finished` / `closed`。
+- `OnlineSeatControlType`：座位控制类型，包含 `human` / `local_bot` / `ai_player`。
+- `CreateOnlineRoomInput`：创建房间请求体，对应 `POST /api/online/rooms`。
+- `JoinOnlineRoomInput`：加入房间请求体，对应 `POST /api/online/rooms/join`。
+- `OnlineRoomSeat`：在线房间座位公开信息。
+- `OnlineRoom`：在线房间公开快照，包含房间码、状态、座位列表等。
+- `OnlineRoomEvent`：WebSocket 房间事件，当前包含 `room_snapshot` 和 `room_updated` 两类。
+
+核心方法：
+
+- `OnlineRoomStatus.fromJson(String? value)`：解析后端状态字符串。
+- `OnlineSeatControlType.fromJson(String? value)`：解析后端座位控制类型。
+- `CreateOnlineRoomInput.toJson()`：生成创建房间请求体。
+- `JoinOnlineRoomInput.toJson()`：生成加入房间请求体。
+- `OnlineRoomSeat.fromJson(...)`：解析座位快照。
+- `OnlineRoom.fromJson(...)`：解析房间快照。
+- `OnlineRoom.seatAt(int seatIndex)`：按座位号查找座位，用于房间页展示 0-3 号座位。
+- `OnlineRoomEvent.fromJson(...)`：解析 WebSocket 房间事件。
 
 ### `frontend/lib/models/splendor_base_models.dart`
 
@@ -507,12 +589,14 @@ color: AppColors.withOpacity(AppColors.primary, 0.12)
 | `AppRoutes.index` | `/` | `IndexPage` |
 | `AppRoutes.splendorCreateSession` | `/splendor/create-session` | `SplendorCreateSessionPage` |
 | `AppRoutes.splendorTable` | `/splendor/table` | `SplendorTablePage` |
+| `AppRoutes.onlineRoom` | `/online-room` | `OnlineRoomPage` |
 
 核心成员：
 
 - `static const index = '/'`：首页路径。
 - `static const splendorCreateSession = '/splendor/create-session'`：璀璨宝石创建对局页路径。
 - `static const splendorTable = '/splendor/table'`：璀璨宝石对局桌面页路径。
+- `static const onlineRoom = '/online-room'`：在线房间大厅页路径。
 - `static final pages = <GetPage>[...]`：GetX 路由表。
 
 用法：
@@ -580,7 +664,7 @@ theme: AppTheme.light
 页面内部私有组件：
 
 - `_Header`：首页顶部品牌区域。
-- `_GameEntryCard`：璀璨宝石入口卡片，左侧展示竖版 `images/splendor/bg.webp` 封面图，右侧展示游戏信息，下方展示开始按钮，并接收 `onStart` 回调。
+- `_GameEntryCard`：璀璨宝石入口卡片，左侧展示竖版 `images/splendor/bg.webp` 封面图，右侧展示游戏信息，下方展示本地开始按钮和在线房间按钮，并接收 `onStart` / `onOnlineRoom` 回调。
 - `_ProjectStagePanel`：当前开发阶段状态展示。
 - `_StageRow`：阶段状态行。
 - `_InfoChip`：入口卡片内的小标签。
@@ -589,6 +673,7 @@ theme: AppTheme.light
 
 - `IndexPage.build(BuildContext context)`：构建首页滚动布局。
 - `_GameEntryCard.onStart`：点击“开始对局”后的回调入口。当前跳转到 `AppRoutes.splendorCreateSession`。
+- `_GameEntryCard.onOnlineRoom`：点击“在线房间”后的回调入口。当前跳转到 `AppRoutes.onlineRoom`。
 
 用法：
 
@@ -604,6 +689,59 @@ GetPage(
 - 首页只负责入口与概览。
 - 创建对局、选择玩家人数、玩家名称等流程应拆到 `pages/splendor/` 下的页面。
 - `_InfoChip` 等当前只在首页使用，暂不抽到 `shared/`。如果其他页面也需要，再抽成公共 widget，并记录到本文档“可复用 Widget”。
+
+### `frontend/lib/pages/online_room/`
+
+职责：
+
+- 在线房间大厅页面域。
+- 当前阶段只负责创建房间、加入房间、展示 4 个座位和监听房间状态更新。
+
+文件职责：
+
+- `online_room_page.dart`：在线房间页面 UI。组合创建/加入表单、房间码、连接状态、座位列表、刷新和离开按钮。
+- `controller/online_room_controller.dart`：在线房间页面控制器。管理输入框、请求状态、当前房间快照、WebSocket 订阅和页面提示。
+
+核心 Controller：
+
+- `OnlineRoomController`
+
+核心状态：
+
+- `room`：当前在线房间快照，空值代表未进入房间。
+- `isSubmitting`：创建/加入接口提交状态。
+- `isWatching`：房间 WebSocket 是否处于监听状态。
+- `statusMessage`：当前操作或连接状态提示。
+- `clientId`：本机临时客户端 ID，保存在 `SharedPreferences`，用于后端识别同一设备重复进入。
+
+核心方法：
+
+- `createRoom()`：读取房主名称，调用 `OnlineApi.createRoom`，成功后进入房间并订阅事件。
+- `joinRoom()`：读取房间码和玩家名称，调用 `OnlineApi.joinRoom`，成功后进入房间并订阅事件。
+- `refreshRoom()`：调用 `OnlineApi.getRoom` 手动刷新当前房间快照。
+- `leaveRoom()`：取消 WebSocket 订阅并清空当前房间页面状态，不删除后端房间。
+- `_submitRoomRequest(...)`：统一处理创建/加入请求的 loading、错误提示和成功后订阅逻辑。
+- `_watchRoom(String roomCode)`：监听 `OnlineApi.watchRoomEvents`，收到事件后刷新 `room`。
+- `_loadClientId()`：从 `SharedPreferences` 读取或创建本机临时 clientId。
+- `_showMessage(String message)`：展示在线房间页的轻量提示。
+- `onClose()`：释放输入框和 WebSocket 订阅。
+
+页面组件：
+
+- `_RoomIntroCard`：说明当前在线房间阶段边界。
+- `_EnterRoomPanel`：创建房间和加入房间表单。
+- `_RoomLobbyPanel`：已进入房间后的房间码、连接状态、座位列表和操作按钮。
+- `_SeatTile`：单个座位展示，显示玩家名、控制类型、房主和在线状态。
+- `_ConnectionBadge`：实时连接状态标签。
+- `_SmallTag`：房主/在线等短标签。
+- `_StatusLine`：页面状态提示文本。
+
+当前限制：
+
+- 不做开始在线游戏。
+- 不提交在线对局行动。
+- 不同步 `GameState`。
+- 不做离开房间的后端座位释放。
 
 ### `frontend/lib/pages/splendor/splendor_create_session_page.dart`
 

@@ -47,4 +47,20 @@ class ApiPaths {
   static String splendorAiStream(String sessionId) {
     return '${splendorSession(sessionId)}/ai/stream';
   }
+
+  /// 在线房间集合接口，用于创建房间。
+  static const onlineRooms = '/api/online/rooms';
+
+  /// 在线房间加入接口，用于通过房间码进入等待大厅。
+  static const onlineRoomsJoin = '/api/online/rooms/join';
+
+  /// 单个在线房间快照接口。
+  static String onlineRoom(String roomCode) {
+    return '$onlineRooms/$roomCode';
+  }
+
+  /// 单个在线房间 WebSocket 事件路径。
+  static String onlineRoomEvents(String roomCode) {
+    return '${onlineRoom(roomCode)}/events';
+  }
 }

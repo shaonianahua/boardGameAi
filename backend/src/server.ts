@@ -1,6 +1,8 @@
 import Fastify from 'fastify';
+import websocket from '@fastify/websocket';
 import { prisma } from './db/prisma.js';
 import { loadEnvFile } from './env.js';
+import { registerOnlineRoutes } from './features/online/routes.js';
 import { registerSplendorRoutes } from './features/splendor/routes.js';
 
 loadEnvFile();
@@ -16,7 +18,9 @@ app.get('/health', async () => {
   };
 });
 
+await app.register(websocket);
 await registerSplendorRoutes(app);
+await registerOnlineRoutes(app);
 
 async function main() {
   await app.listen({ port, host: '0.0.0.0' });
