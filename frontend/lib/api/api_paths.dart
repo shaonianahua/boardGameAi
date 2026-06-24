@@ -33,6 +33,11 @@ class ApiPaths {
     return '${splendorSession(sessionId)}/bot/act';
   }
 
+  /// V2 AI 玩家自动行动接口，后端调用模型选行动，失败时回退本地 Bot。
+  static String splendorAiAct(String sessionId) {
+    return '${splendorSession(sessionId)}/ai/act';
+  }
+
   /// V2 AI 建议接口，第一版由后端本地启发式返回结构化建议。
   static String splendorAiDecision(String sessionId) {
     return '${splendorSession(sessionId)}/ai/decide';

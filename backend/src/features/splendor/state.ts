@@ -44,7 +44,7 @@ function initialPlayers(input: CreateSplendorSessionInput): SplendorPlayerState[
     seatIndex: index,
     name: player.name.trim() || `玩家${index + 1}`,
     type: player.type ?? 'human',
-    botLevel: player.botLevel,
+    botLevel: (player.type ?? 'human') === 'bot' ? player.botLevel ?? 'local' : undefined,
     score: 0,
     tokens: emptyTokens(),
     bonuses: emptyBonuses(),

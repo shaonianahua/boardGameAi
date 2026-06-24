@@ -15,8 +15,8 @@
 当前 App 已进入璀璨宝石 V2 规划阶段。V1 已完成本地同屏对局主流程，V2 前端重点是：
 
 - 页面展示和交互。
-- 创建对局时支持真人 / Bot 座位。
-- Bot 回合自动推进，并展示“Bot 思考中”；Bot 行动结果进入行动历史，不再用顶部弹窗打断操作。
+- 创建对局时支持真人 / 本地 Bot / AI 玩家座位。
+- 自动玩家回合自动推进，并展示“正在思考”；行动结果进入行动历史，不再用顶部弹窗打断操作。
 - 真人回合支持“AI 建议”入口。
 - AI 建议面板展示推荐行动、理由、备选行动、对手威胁和风险。
 - 后续流式输出和桌面元素高亮可以复用同一套建议模型。
@@ -62,6 +62,7 @@ frontend/lib/
 │           │   ├── legal_actions_panel.dart
 │           │   └── take_tokens_panel.dart
 │           ├── controller/
+│           │   ├── splendor_auto_player_controller.dart
 │           │   └── splendor_table_controller.dart
 │           ├── splendor_card_style_helpers.dart
 │           ├── splendor_catalog_lookup.dart
@@ -188,6 +189,7 @@ final apiClient = ApiClient(baseUrl: ApiConfig.defaultBaseUrl);
 - `splendorLegalActions(String sessionId)`：当前合法行动路径。
 - `splendorActions(String sessionId)`：提交行动和行动历史路径。
 - `splendorBotAct(String sessionId)`：V2 当前 Bot 玩家自动行动路径，对应 `POST /api/splendor/sessions/:sessionId/bot/act`。
+- `splendorAiAct(String sessionId)`：V2 AI 玩家自动行动路径，对应 `POST /api/splendor/sessions/:sessionId/ai/act`；模型失败时后端回退本地 Bot。
 - `splendorAiDecision(String sessionId)`：V2 AI 建议 / AI 执行路径，计划对应 `POST /api/splendor/sessions/:sessionId/ai/decide`。
 - `splendorAiStream(String sessionId)`：V2 AI 流式建议路径，对应 `POST /api/splendor/sessions/:sessionId/ai/stream`。
 
@@ -224,6 +226,7 @@ final path = ApiPaths.splendorActions(sessionId);
 - `submitAction(String sessionId, SplendorSubmitActionInput input)`：调用 `POST /api/splendor/sessions/:sessionId/actions`。
 - `getActions(String sessionId)`：调用 `GET /api/splendor/sessions/:sessionId/actions`。
 - `actBot(String sessionId)`：V2 调用 `POST /api/splendor/sessions/:sessionId/bot/act`，让当前 Bot 玩家由后端选择并执行一个合法行动。
+- `actAiPlayer(String sessionId)`：V2 调用 `POST /api/splendor/sessions/:sessionId/ai/act`，让当前 AI 玩家调用模型选择合法行动；后端会在模型失败时回退本地 Bot。
 - `requestAiAdvice(String sessionId)`：V2 调用 `POST /api/splendor/sessions/:sessionId/ai/decide` 获取结构化 AI 建议；只做请求和模型转换，不直接执行行动。
 - `requestAiAdviceStream(String sessionId)`：V2 调用 `POST /api/splendor/sessions/:sessionId/ai/stream` 获取 SSE 流式建议事件；事件包含 progress、delta、result 和 done，result 会携带最终结构化建议。
 - `_streamLog(String message)`：AI 流式接口专用日志，输出原始 chunk、SSE block 和解析后的业务事件，日志前缀为 `splendor.ai.stream`。
@@ -279,6 +282,8 @@ try {
 
 - `JsonMap`
 - `SplendorPlayerType`
+- `SplendorBotLevel`
+- `SplendorSeatControlType`
 - `SplendorSessionStatus`
 - `SplendorActionType`
 - `SplendorTokenSet`
@@ -342,6 +347,7 @@ try {
 - `SplendorActionRecord`
 - `SplendorBotDecision`
 - `SplendorBotActionResponse`
+- `SplendorAiPlayerActionResponse`
 - `SplendorAiAdviceDecision`
 - `SplendorAiAdviceResponse`
 - `SplendorAiAdviceStreamEvent`
@@ -637,7 +643,7 @@ Get.toNamed(AppRoutes.splendorCreateSession);
 职责：
 
 - 管理创建对局页的表单状态。
-- 维护玩家人数、玩家名称输入框、玩家类型和提交状态。
+- 维护玩家人数、玩家名称输入框、座位控制方式和提交状态。
 - 调用 `SplendorApi.createSession` 创建对局。
 - 创建成功后跳转到 `AppRoutes.splendorTable`。
 - 作为创建对局页的 ViewModel，不直接写页面 UI。
@@ -651,12 +657,12 @@ Get.toNamed(AppRoutes.splendorCreateSession);
 - `playerCount`：当前玩家人数。
 - `isSubmitting`：是否正在创建对局。
 - `nameControllers`：固定 4 个输入框控制器，覆盖 2-4 人。
-- `playerTypes`：固定 4 个玩家类型状态，覆盖 2-4 人。
+- `seatControlTypes`：固定 4 个座位控制方式状态，覆盖 2-4 人；支持真人、本地 Bot、AI 玩家。
 
 核心方法：
 
 - `setPlayerCount(int value)`：切换玩家人数。
-- `setPlayerType(int index, SplendorPlayerType type)`：设置某个座位是真人或 Bot。
+- `setSeatControlType(int index, SplendorSeatControlType type)`：设置某个座位是真人、本地 Bot 或 AI 玩家。
 - `createSession()`：校验名称、提交创建对局请求、处理成功跳转和错误提示。
 
 用法：
@@ -710,7 +716,7 @@ PlayerCountSelector(
 - 当前玩家摘要固定展示玩家手里的各色宝石、分数、永久 bonus 和预留数量。
 - 负责打开市场发展卡行动面板，并把后端合法行动提交给控制器。
 - 通过行动历史中 `reserve_card source: deck` 的前后状态差异，识别其他玩家从牌堆盲抽的预留卡，并在对手详情中隐藏这些卡面。
-- 如果当前行动玩家是 Bot，页面展示 Bot 思考状态，实际自动行动由 `SplendorTableController` 调用后端完成。
+- 如果当前行动玩家是本地 Bot 或 AI 玩家，页面展示自动玩家思考状态，实际自动行动由 `SplendorAutoPlayerController` 调用后端完成。
 - 如果当前行动玩家是真人，页面展示“AI 建议”按钮，点击后请求后端建议并打开底部策略面板。
 
 核心类：
@@ -721,7 +727,7 @@ PlayerCountSelector(
 
 - `_OpponentStrip`：顶部对手摘要条。
 - `_CompactOpponentCard`：单个对手的紧凑摘要。
-- `_TurnPrompt`：当前回合提示；如果当前玩家是 Bot，会显示等待自动行动或思考中；如果存在 `pendingAction`，会提示先弃宝石或先选贵族。
+- `_TurnPrompt`：当前回合提示；如果当前玩家是本地 Bot 或 AI 玩家，会显示等待自动行动或思考中；如果存在 `pendingAction`，会提示先弃宝石或先选贵族。
 - `_AiAdviceButton`：真人当前回合的 AI 建议入口，只负责加载态和点击回调。
 - `_EmptySessionView`：路由参数缺失时的空状态。
 - `_hiddenReservedCardIdsByPlayer(...)`：根据行动历史识别每位玩家需要隐藏的盲抽预留卡；历史加载中时保守隐藏全部对手预留卡。
@@ -742,7 +748,7 @@ Get.offNamed(AppRoutes.splendorTable, arguments: sessionResponse);
 - 市场和贵族必须优先展示 catalog 信息；只有 catalog 缺失时才用 ID 兜底。
 - 行动按钮应优先基于 `SplendorApi.getLegalActions` 返回内容展示。
 - 提交行动后使用 `SplendorApi.submitAction` 返回的新 `state` 刷新页面。
-- Bot 行动后使用 `SplendorApi.actBot` 返回的新 `state` 刷新页面。
+- 自动玩家行动后使用 `SplendorAutoPlayerController` 返回的新 `state` 刷新页面。
 - AI 建议面板可以展示“执行推荐行动”按钮；按钮通过 controller 校验当前合法行动后提交，执行成功后清空旧建议并关闭面板。
 - 本页不重新实现后端已有的规则判断，只做必要的 UI 禁用和提示。
 - 页面只拼接布局，接口请求和状态变更放在 `SplendorTableController`。
@@ -788,13 +794,42 @@ await CardActionsSheet.show(
 - 面板只做合法行动匹配，不推导费用、折扣、黄金支付或预留上限。
 - 如果后端新增牌堆预留、预留区购买等入口，应新增明确的 source 匹配分支，不要复用市场卡匹配逻辑。
 
+### `frontend/lib/pages/splendor/table/controller/splendor_auto_player_controller.dart`
+
+职责：
+
+- 管理本地 Bot 和 AI 玩家自动行动。
+- 根据当前玩家 `botLevel` 区分调用 `SplendorApi.actBot` 或 `SplendorApi.actAiPlayer`。
+- 维护 `isActingLocalBot`、`isActingAiPlayer` 和统一 `isActing` 状态。
+- 不直接管理桌面 UI 状态；行动成功后把新 session/state 返回给 `SplendorTableController`。
+
+核心类：
+
+- `SplendorAutoPlayerController extends GetxController`
+- `SplendorAutoPlayerActResult`
+
+核心方法：
+
+- `isLocalBot(SplendorPlayerState player)`：判断玩家是否是 `botLevel=local` 的本地 Bot。
+- `isAiPlayer(SplendorPlayerState player)`：判断玩家是否是 `botLevel=ai` 的 AI 玩家。
+- `shouldAct(SplendorGameState state)`：判断当前状态是否轮到自动玩家行动。
+- `actCurrentPlayer({ required String sessionId, required SplendorGameState state })`：根据当前玩家类型调用本地 Bot 或 AI 玩家接口。
+- `_actLocalBot(...)`：调用本地 Bot 自动行动接口。
+- `_actAiPlayer(...)`：调用 AI 玩家自动行动接口；模型失败时后端会回退本地 Bot。
+
+维护规则：
+
+- 本地 Bot 和 AI 玩家差异化逻辑放在本控制器，不继续堆进桌面主控制器。
+- 自动行动接口失败时只抛出错误给主控制器提示，不在本控制器直接操作页面状态。
+
 ### `frontend/lib/pages/splendor/table/controller/splendor_table_controller.dart`
 
 职责：
 
 - 管理桌面页的对局状态、catalog 和合法行动。
-- 调用 `getCatalog`、`getSession`、`getLegalActions`、`getActions`、`submitAction` 和 `actBot`。
-- 维护刷新、加载、提交和 Bot 自动行动状态。
+- 调用 `getCatalog`、`getSession`、`getLegalActions`、`getActions` 和 `submitAction`。
+- 维护刷新、加载、提交和 AI 建议状态。
+- 持有 `SplendorAutoPlayerController`，但不直接实现本地 Bot / AI 玩家差异化调用。
 - 作为桌面页的 ViewModel，负责页面状态和接口编排，不承载完整规则判断。
 
 核心类：
@@ -812,7 +847,7 @@ await CardActionsSheet.show(
 - `isLoadingLegalActions`：合法行动加载状态。
 - `isLoadingActionHistory`：行动历史加载状态。
 - `isSubmittingAction`：行动提交状态。
-- `isActingBot`：Bot 自动行动状态。
+- `autoPlayerController`：自动玩家控制器，提供本地 Bot / AI 玩家行动状态和接口编排。
 - `isLoadingAiAdvice`：AI 建议请求状态。
 - `aiAdvice`：最近一次 AI 建议响应，供底部策略面板展示。
 - `aiAdviceStreamLines`：AI 流式建议逐段文本，供底部策略面板展示实时分析过程。
@@ -826,7 +861,7 @@ await CardActionsSheet.show(
 - `loadActionHistory()`：拉取当前对局行动历史。
 - `submitLegalAction(SplendorLegalAction legalAction)`：提交后端返回的合法行动；普通行动成功后只刷新状态和历史，不再弹出每步成功提示。
 - `_submitLegalAction(SplendorLegalAction legalAction)`：内部提交方法，返回是否成功；AI 推荐执行需要根据结果清空旧建议。
-- `actCurrentBot()`：调用后端 Bot 自动行动接口并更新状态；Bot 决策原因保留在日志和行动历史中，不弹出顶部提示。
+- `actCurrentAutoPlayer()`：调用 `SplendorAutoPlayerController` 执行当前本地 Bot 或 AI 玩家，并把返回状态写回桌面。
 - `requestAiAdvice()`：为当前真人玩家请求 AI 建议；优先走流式接口，失败时回退非流式接口，只更新建议展示状态。
 - `executeAiRecommendedAction()`：执行当前 AI 建议中的推荐行动；提交前会确认推荐行动仍存在于当前合法行动列表，成功后清空 `aiAdvice` 和 `aiAdviceStreamLines`，避免继续展示过期建议。
 - `_findMatchingLegalAction(SplendorLegalAction recommendedAction)`：在当前合法行动列表中查找与 AI 推荐行动 payload 完全一致的行动。
@@ -838,7 +873,7 @@ await CardActionsSheet.show(
 - `_isNetworkInterrupted(ApiException error)`：识别 AI 流式请求中的网络中断、读取失败、取消和证书异常；这类错误不再继续 fallback，而是在面板中提示用户重试或自动重连。
 - `_appendAiAdviceStreamText(String text, { required bool appendToLastLine })`：把流式文本追加到实时分析展示区；模型 delta 默认合并到上一行，避免一个字一个字变成多行。
 - `_AiAdviceStreamDisplayFilter`：过滤模型原生流中的 `<FINAL_JSON>`、半截 `<FINAL_JSON`、JSON 片段和 markdown 标识，只把自然语言分析交给 UI 展示。
-- `_scheduleBotAutoAction()`：当前玩家是 Bot 时延迟触发自动行动；连续 Bot 会在成功行动后继续推进。
+- `_scheduleAutoPlayerAction()`：当前玩家是本地 Bot 或 AI 玩家时延迟触发自动行动；连续自动玩家会在成功行动后继续推进。
 - `_showAwardedNobleMessage(...)`：提交行动后对比玩家前后贵族列表，如果本回合自动获得贵族，则显示关键提示。
 - `_nobleById(String nobleId)`：从已加载 catalog 中查找贵族，仅用于获得贵族提示文案。
 - `_isHeuristicFallback(SplendorAiAdviceResponse response)`：根据建议理由判断本次是否是模型失败后的本地启发式 fallback，仅用于前端日志。

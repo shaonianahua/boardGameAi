@@ -3,6 +3,7 @@ export type TokenColor = GemColor | 'gold';
 export type PlayerType = 'human' | 'bot';
 export type SessionStatus = 'active' | 'finished' | 'abandoned';
 export type ActionActorType = 'human' | 'bot' | 'llm';
+export type BotLevel = 'local' | 'ai' | string;
 
 export type TokenSet = Partial<Record<TokenColor, number>>;
 export type GemSet = Record<GemColor, number>;
@@ -26,7 +27,7 @@ export interface SplendorPlayerState {
   seatIndex: number;
   name: string;
   type: PlayerType;
-  botLevel?: string;
+  botLevel?: BotLevel;
   score: number;
   tokens: FullTokenSet;
   bonuses: GemSet;
@@ -82,7 +83,7 @@ export interface CreateSplendorSessionInput {
   players: Array<{
     name: string;
     type?: PlayerType;
-    botLevel?: string;
+    botLevel?: BotLevel;
   }>;
 }
 

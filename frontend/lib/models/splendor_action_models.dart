@@ -328,6 +328,48 @@ class SplendorBotActionResponse {
   final SplendorBotDecision decision;
 }
 
+/// AI 玩家自动行动接口响应。
+///
+/// AI 玩家通过大模型选择合法行动；模型失败时后端会回退到本地 Bot 策略。
+class SplendorAiPlayerActionResponse {
+  /// 构造 AI 玩家自动行动响应。
+  const SplendorAiPlayerActionResponse({
+    required this.session,
+    required this.actionRecord,
+    required this.state,
+    required this.advice,
+    required this.fallbackToLocalBot,
+  });
+
+  /// 从 `POST /api/splendor/sessions/:sessionId/ai/act` 响应 JSON 解析。
+  factory SplendorAiPlayerActionResponse.fromJson(JsonMap json) {
+    return SplendorAiPlayerActionResponse(
+      session: SplendorSession.fromJson(json['session'] as JsonMap),
+      actionRecord: SplendorActionRecord.fromJson(
+        json['actionRecord'] as JsonMap,
+      ),
+      state: SplendorGameState.fromJson(json['state'] as JsonMap),
+      advice: SplendorAiAdviceResponse.fromJson(json['advice'] as JsonMap),
+      fallbackToLocalBot: json['fallbackToLocalBot'] as bool? ?? false,
+    );
+  }
+
+  /// 更新后的对局元信息。
+  final SplendorSession session;
+
+  /// AI 玩家本次行动生成的历史记录。
+  final SplendorActionRecord actionRecord;
+
+  /// 行动执行后的完整游戏状态。
+  final SplendorGameState state;
+
+  /// AI 玩家本次选择行动时的结构化建议。
+  final SplendorAiAdviceResponse advice;
+
+  /// 本次是否因为模型失败而由本地 Bot 策略临时接管。
+  final bool fallbackToLocalBot;
+}
+
 /// AI 建议接口返回的结构化决策内容。
 ///
 /// 第一版由后端本地启发式生成，后续接入大模型时继续复用这组字段展示策略面板。

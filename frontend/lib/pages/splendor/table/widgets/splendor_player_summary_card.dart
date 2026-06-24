@@ -66,7 +66,7 @@ class SplendorPlayerSummaryCard extends StatelessWidget {
                     if (player.type == SplendorPlayerType.bot) ...[
                       SizedBox(width: 6.w),
                       Icon(
-                        Icons.smart_toy_rounded,
+                        _automaticPlayerIcon(player),
                         size: 15.w,
                         color: colorScheme.primary,
                       ),
@@ -138,4 +138,11 @@ class SplendorPlayerSummaryCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 根据自动玩家类型返回玩家摘要卡中的身份图标。
+IconData _automaticPlayerIcon(SplendorPlayerState player) {
+  return SplendorBotLevel.fromJson(player.botLevel) == SplendorBotLevel.ai
+      ? Icons.auto_awesome_rounded
+      : Icons.smart_toy_rounded;
 }

@@ -96,6 +96,7 @@ class _SplendorTablePageState extends State<SplendorTablePage> {
               legalActions?.playerIndex ??
               response?.state.currentPlayerIndex ??
               0;
+          final isAutoPlayerActing = controller.autoPlayerController.isActing;
           final hiddenReservedCardIdsByPlayer = _hiddenReservedCardIdsByPlayer(
             players: response?.state.players ?? const [],
             actions: controller.actionHistory,
@@ -123,7 +124,7 @@ class _SplendorTablePageState extends State<SplendorTablePage> {
                       legalActions: controller.legalActions.value,
                       isSubmitting:
                           controller.isSubmittingAction.value ||
-                          controller.isActingBot.value,
+                          isAutoPlayerActing,
                       onSubmit: controller.submitLegalAction,
                     ),
                     SizedBox(height: 8.h),
@@ -134,7 +135,7 @@ class _SplendorTablePageState extends State<SplendorTablePage> {
                           controller.isLoadingLegalActions.value,
                       isSubmitting:
                           controller.isSubmittingAction.value ||
-                          controller.isActingBot.value,
+                          isAutoPlayerActing,
                       onSubmit: controller.submitLegalAction,
                     ),
                     SizedBox(height: 8.h),
@@ -151,7 +152,7 @@ class _SplendorTablePageState extends State<SplendorTablePage> {
                           .players[response.state.currentPlayerIndex],
                       pendingAction:
                           controller.legalActions.value?.pendingAction,
-                      isActingBot: controller.isActingBot.value,
+                      isActingAutoPlayer: isAutoPlayerActing,
                     ),
                     if (_canShowAiAdviceButton(response.state)) ...[
                       SizedBox(height: 8.h),
@@ -159,7 +160,7 @@ class _SplendorTablePageState extends State<SplendorTablePage> {
                         isLoading: controller.isLoadingAiAdvice.value,
                         isDisabled:
                             controller.isSubmittingAction.value ||
-                            controller.isActingBot.value,
+                            isAutoPlayerActing,
                         onPressed: _showAiAdviceSheet,
                       ),
                     ],
@@ -182,8 +183,8 @@ class _SplendorTablePageState extends State<SplendorTablePage> {
                       currentPlayer: response.state.players[actingPlayerIndex],
                       isSubmitting:
                           controller.isSubmittingAction.value ||
-                          controller.isActingBot.value,
-                      isActingBot: controller.isActingBot.value,
+                          isAutoPlayerActing,
+                      isActingAutoPlayer: isAutoPlayerActing,
                       isLoading: controller.isLoadingLegalActions.value,
                       onSubmit: controller.submitLegalAction,
                     ),
@@ -479,7 +480,7 @@ class _CompactOpponentCard extends StatelessWidget {
                         if (player.type == SplendorPlayerType.bot) ...[
                           SizedBox(width: 4.w),
                           Icon(
-                            Icons.smart_toy_rounded,
+                            _automaticPlayerIcon(player),
                             size: 13.w,
                             color: colorScheme.primary,
                           ),
@@ -575,13 +576,13 @@ class _TurnPrompt extends StatelessWidget {
     required this.turnIndex,
     required this.currentPlayer,
     required this.pendingAction,
-    required this.isActingBot,
+    required this.isActingAutoPlayer,
   });
 
   final int turnIndex;
   final SplendorPlayerState currentPlayer;
   final SplendorPendingAction? pendingAction;
-  final bool isActingBot;
+  final bool isActingAutoPlayer;
 
   @override
   Widget build(BuildContext context) {
@@ -599,9 +600,14 @@ class _TurnPrompt extends StatelessWidget {
     final pendingAction = this.pendingAction;
     if (pendingAction == null) {
       if (currentPlayer.type == SplendorPlayerType.bot) {
-        return isActingBot
-            ? '第 ${turnIndex + 1} 回合，${currentPlayer.name} 正在思考'
-            : '第 ${turnIndex + 1} 回合，等待 ${currentPlayer.name} 自动行动';
+        final roleName =
+            SplendorBotLevel.fromJson(currentPlayer.botLevel) ==
+                SplendorBotLevel.ai
+            ? 'AI 玩家'
+            : '本地 Bot';
+        return isActingAutoPlayer
+            ? '第 ${turnIndex + 1} 回合，${currentPlayer.name}（$roleName）正在思考'
+            : '第 ${turnIndex + 1} 回合，等待 ${currentPlayer.name}（$roleName）自动行动';
       }
       return '第 ${turnIndex + 1} 回合，${currentPlayer.name} 请选择一项行动';
     }
@@ -610,7 +616,12 @@ class _TurnPrompt extends StatelessWidget {
       final discardCount =
           (pendingAction.tokenCount ?? 0) - (pendingAction.maxTokenCount ?? 0);
       if (currentPlayer.type == SplendorPlayerType.bot) {
-        return '第 ${turnIndex + 1} 回合，${currentPlayer.name} 正在弃掉 $discardCount 个宝石';
+        final roleName =
+            SplendorBotLevel.fromJson(currentPlayer.botLevel) ==
+                SplendorBotLevel.ai
+            ? 'AI 玩家'
+            : '本地 Bot';
+        return '第 ${turnIndex + 1} 回合，${currentPlayer.name}（$roleName）正在弃掉 $discardCount 个宝石';
       }
       return '第 ${turnIndex + 1} 回合，${currentPlayer.name} 请先弃掉 $discardCount 个宝石';
     }
@@ -673,4 +684,11 @@ int _tokenTotal(SplendorTokenSet tokens) {
       tokens.red +
       tokens.black +
       tokens.gold;
+}
+
+/// 根据自动玩家类型返回玩家摘要中使用的图标。
+IconData _automaticPlayerIcon(SplendorPlayerState player) {
+  return SplendorBotLevel.fromJson(player.botLevel) == SplendorBotLevel.ai
+      ? Icons.auto_awesome_rounded
+      : Icons.smart_toy_rounded;
 }

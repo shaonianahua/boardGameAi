@@ -204,10 +204,11 @@ POST /api/splendor/sessions/:sessionId/bot/act
 
 用途：
 
-- 只在当前行动玩家 `type === bot` 时可调用。
+- 只在当前行动玩家 `type === bot` 且 `botLevel !== ai` 时可调用。
 - 后端读取当前 `GameState`，生成合法行动，再由 `bot-advisor.ts` 选择一个行动。
 - 选中的行动仍通过 `submitSplendorAction` 和规则引擎执行，保证 Bot 不绕过规则。
 - 如果行动后进入弃宝石 pending，前端会再次调用该接口，让 Bot 自动从合法弃宝石行动中选择一个。
+- 创建对局时 `type=bot` 如果没有传 `botLevel`，后端默认写入 `local`。
 
 返回：
 
@@ -215,6 +216,28 @@ POST /api/splendor/sessions/:sessionId/bot/act
 - `actionRecord`：Bot 本次行动记录，`actorType` 为 `bot`。
 - `state`：更新后的完整 `GameState`。
 - `decision`：本地 Bot 启发式评分、原因和选中的行动。
+
+### AI 玩家自动行动
+
+```text
+POST /api/splendor/sessions/:sessionId/ai/act
+```
+
+用途：
+
+- 只在当前行动玩家 `type === bot` 且 `botLevel === ai` 时可调用。
+- 后端读取当前 `GameState` 并生成合法行动，然后复用 AI advisor 让模型在合法行动中选择。
+- 模型不可用、网络失败、超时、JSON 非法或 actionId 不合法时，advisor 会回退到本地启发式建议。
+- 选中的行动仍通过 `submitSplendorAction` 和规则引擎执行，保证 AI 玩家不绕过规则。
+- 行动记录 `actorType` 为 `llm`；即使本次是 fallback，也表示该座位由 AI 玩家流程接管。
+
+返回：
+
+- `session`：更新后的对局摘要。
+- `actionRecord`：AI 玩家本次行动记录。
+- `state`：更新后的完整 `GameState`。
+- `advice`：AI advisor 返回的结构化建议和选中合法行动。
+- `fallbackToLocalBot`：是否因为模型失败或不可用而临时回退到本地启发式。
 
 ### AI 策略建议
 

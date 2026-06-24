@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { splendorCards, splendorNobles } from './catalog.js';
 import {
+  actSplendorAiPlayer,
   actSplendorBot,
   createSplendorSession,
   getSplendorAdvice,
@@ -93,6 +94,15 @@ export async function registerSplendorRoutes(app: FastifyInstance): Promise<void
     try {
       const params = request.params as { sessionId: string };
       return await actSplendorBot(params.sessionId);
+    } catch (error) {
+      return reply.status(400).send(errorResponse(error));
+    }
+  });
+
+  app.post('/api/splendor/sessions/:sessionId/ai/act', async (request, reply) => {
+    try {
+      const params = request.params as { sessionId: string };
+      return await actSplendorAiPlayer(params.sessionId);
     } catch (error) {
       return reply.status(400).send(errorResponse(error));
     }

@@ -61,6 +61,14 @@ export interface SplendorBotActionResponse {
   };
 }
 
+export interface SplendorAiPlayerActionResponse {
+  session: PublicSession;
+  actionRecord: PublicActionRecord;
+  state: SplendorGameState;
+  advice: SplendorAdviceResponse;
+  fallbackToLocalBot: boolean;
+}
+
 type GameSessionWithPlayers = Prisma.GameSessionGetPayload<{
   include: {
     players: true;
@@ -265,6 +273,9 @@ export async function actSplendorBot(sessionId: string): Promise<SplendorBotActi
   if (currentPlayer.type !== 'bot') {
     throw new Error('current player is not a bot');
   }
+  if (currentPlayer.botLevel === 'ai') {
+    throw new Error('current player is an AI player, use ai act endpoint');
+  }
 
   const legalActions = generateSplendorLegalActions(existing.state);
   const decision = chooseSplendorBotAction(existing.state, legalActions);
@@ -284,12 +295,60 @@ export async function actSplendorBot(sessionId: string): Promise<SplendorBotActi
   };
 }
 
+/**
+ * Executes one turn for a bot seat configured as an AI player.
+ *
+ * The model is only allowed to choose from legal actions produced by the rules
+ * engine. If the model is unavailable or returns an invalid action, the advice
+ * service falls back to the local heuristic before this method submits the move.
+ */
+export async function actSplendorAiPlayer(sessionId: string): Promise<SplendorAiPlayerActionResponse> {
+  const existing = await getSplendorSession(sessionId);
+  const currentPlayer = existing.state.players[existing.state.currentPlayerIndex];
+  if (!currentPlayer) {
+    throw new Error('current player not found');
+  }
+  if (currentPlayer.type !== 'bot') {
+    throw new Error('current player is not an automatic player');
+  }
+  if (currentPlayer.botLevel !== 'ai') {
+    throw new Error('current automatic player is not configured as AI');
+  }
+
+  const legalActions = generateSplendorLegalActions(existing.state);
+  const advice = await createSplendorAdvice(existing.state, legalActions);
+  const selectedAction = advice.selectedAction;
+  if (!selectedAction) {
+    throw new Error(advice.decision.summary || 'AI player has no legal action');
+  }
+
+  const result = await submitSplendorAction(sessionId, {
+    playerIndex: legalActions.playerIndex,
+    actorType: 'llm',
+    action: selectedAction.action,
+  });
+
+  return {
+    ...result,
+    advice,
+    fallbackToLocalBot: isHeuristicFallbackAdvice(advice),
+  };
+}
+
 export async function listSplendorActions(sessionId: string): Promise<PublicActionRecord[]> {
   const actions = await prisma.gameAction.findMany({
     where: { sessionId },
     orderBy: [{ turnIndex: 'asc' }, { createdAt: 'asc' }],
   });
   return actions.map(publicAction);
+}
+
+/** Detects whether the AI action response came from the local heuristic fallback. */
+function isHeuristicFallbackAdvice(advice: SplendorAdviceResponse): boolean {
+  return advice.decision.reasoning.some((reason) => (
+    reason.includes('模型建议暂不可用') ||
+    reason.includes('回退本地启发式')
+  ));
 }
 
 export async function getSplendorLegalActions(

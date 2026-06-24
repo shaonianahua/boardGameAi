@@ -13,7 +13,7 @@ class LegalActionsPanel extends StatelessWidget {
     required this.legalActions,
     required this.currentPlayer,
     required this.isSubmitting,
-    required this.isActingBot,
+    required this.isActingAutoPlayer,
     required this.isLoading,
     required this.onSubmit,
     super.key,
@@ -28,8 +28,8 @@ class LegalActionsPanel extends StatelessWidget {
   /// 行动是否正在提交。
   final bool isSubmitting;
 
-  /// 当前是否正在等待 Bot 自动行动。
-  final bool isActingBot;
+  /// 当前是否正在等待本地 Bot 或 AI 玩家自动行动。
+  final bool isActingAutoPlayer;
 
   /// 合法行动是否加载中。
   final bool isLoading;
@@ -43,7 +43,7 @@ class LegalActionsPanel extends StatelessWidget {
   }
 
   Widget _buildContent(BuildContext context) {
-    if (isActingBot) {
+    if (isActingAutoPlayer) {
       return Row(
         children: [
           const SizedBox.square(
@@ -53,7 +53,7 @@ class LegalActionsPanel extends StatelessWidget {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              '${currentPlayer.name} 正在思考行动。',
+              '${currentPlayer.name} 正在自动行动。',
               style: Theme.of(
                 context,
               ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700),

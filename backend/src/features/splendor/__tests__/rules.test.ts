@@ -28,6 +28,33 @@ test('generates legal actions for an active session', () => {
   assert.ok(result.actions.some((item) => item.action.type === 'reserve_card'));
 });
 
+test('defaults bot seats to local bot controller', () => {
+  const state = createInitialSplendorState({
+    playerCount: 2,
+    players: [
+      { name: 'Local Bot', type: 'bot' },
+      { name: 'Human', type: 'human' },
+    ],
+  });
+
+  assert.equal(state.players[0].type, 'bot');
+  assert.equal(state.players[0].botLevel, 'local');
+  assert.equal(state.players[1].botLevel, undefined);
+});
+
+test('keeps AI botLevel for AI controlled seats', () => {
+  const state = createInitialSplendorState({
+    playerCount: 2,
+    players: [
+      { name: 'AI Player', type: 'bot', botLevel: 'ai' },
+      { name: 'Human', type: 'human' },
+    ],
+  });
+
+  assert.equal(state.players[0].type, 'bot');
+  assert.equal(state.players[0].botLevel, 'ai');
+});
+
 test('allows taking two different tokens when only two gem colors remain', () => {
   const state: SplendorGameState = {
     ...createTwoPlayerState(),

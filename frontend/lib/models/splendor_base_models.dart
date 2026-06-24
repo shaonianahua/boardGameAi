@@ -20,6 +20,50 @@ enum SplendorPlayerType {
   String toJson() => name;
 }
 
+/// 自动玩家控制方式。
+///
+/// 后端当前通过 `type=bot` + `botLevel=local/ai` 区分本地 Bot 和 AI 玩家。
+enum SplendorBotLevel {
+  local,
+  ai;
+
+  /// 从后端 botLevel 字符串解析控制方式，未知值按本地 Bot 处理。
+  static SplendorBotLevel fromJson(String? value) {
+    return switch (value) {
+      'ai' => SplendorBotLevel.ai,
+      _ => SplendorBotLevel.local,
+    };
+  }
+
+  /// 转成后端创建对局接口需要的 botLevel 字符串。
+  String toJson() => name;
+}
+
+/// 创建对局页使用的座位控制方式。
+///
+/// 这是前端 UI 概念，提交给后端时会转换成 player.type 和 botLevel。
+enum SplendorSeatControlType {
+  human,
+  localBot,
+  aiPlayer;
+
+  /// 当前选项提交给后端时使用的 player.type。
+  SplendorPlayerType get playerType {
+    return this == SplendorSeatControlType.human
+        ? SplendorPlayerType.human
+        : SplendorPlayerType.bot;
+  }
+
+  /// 当前选项提交给后端时使用的 botLevel，真人玩家返回 null。
+  String? get botLevel {
+    return switch (this) {
+      SplendorSeatControlType.human => null,
+      SplendorSeatControlType.localBot => SplendorBotLevel.local.toJson(),
+      SplendorSeatControlType.aiPlayer => SplendorBotLevel.ai.toJson(),
+    };
+  }
+}
+
 /// 璀璨宝石对局状态。
 enum SplendorSessionStatus {
   active,

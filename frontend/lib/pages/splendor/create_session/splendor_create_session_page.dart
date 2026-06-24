@@ -76,10 +76,10 @@ class _SplendorCreateSessionPageState extends State<SplendorCreateSessionPage> {
                     child: _PlayerInputRow(
                       index: index,
                       nameController: controller.nameControllers[index],
-                      playerType: controller.playerTypes[index],
+                      seatControlType: controller.seatControlTypes[index],
                       isLast: index == controller.playerCount.value - 1,
                       onTypeChanged: (type) =>
-                          controller.setPlayerType(index, type),
+                          controller.setSeatControlType(index, type),
                     ),
                   );
                 }),
@@ -111,21 +111,21 @@ class _SplendorCreateSessionPageState extends State<SplendorCreateSessionPage> {
   }
 }
 
-/// 创建对局页单个座位输入行，包含名称和真人/Bot 类型选择。
+/// 创建对局页单个座位输入行，包含名称和控制方式选择。
 class _PlayerInputRow extends StatelessWidget {
   const _PlayerInputRow({
     required this.index,
     required this.nameController,
-    required this.playerType,
+    required this.seatControlType,
     required this.isLast,
     required this.onTypeChanged,
   });
 
   final int index;
   final TextEditingController nameController;
-  final Rx<SplendorPlayerType> playerType;
+  final Rx<SplendorSeatControlType> seatControlType;
   final bool isLast;
-  final ValueChanged<SplendorPlayerType> onTypeChanged;
+  final ValueChanged<SplendorSeatControlType> onTypeChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -142,20 +142,25 @@ class _PlayerInputRow extends StatelessWidget {
         ),
         SizedBox(height: 8.h),
         Obx(
-          () => SegmentedButton<SplendorPlayerType>(
+          () => SegmentedButton<SplendorSeatControlType>(
             segments: const [
-              ButtonSegment<SplendorPlayerType>(
-                value: SplendorPlayerType.human,
+              ButtonSegment<SplendorSeatControlType>(
+                value: SplendorSeatControlType.human,
                 icon: Icon(Icons.person_rounded),
                 label: Text('真人'),
               ),
-              ButtonSegment<SplendorPlayerType>(
-                value: SplendorPlayerType.bot,
+              ButtonSegment<SplendorSeatControlType>(
+                value: SplendorSeatControlType.localBot,
                 icon: Icon(Icons.smart_toy_rounded),
-                label: Text('Bot'),
+                label: Text('本地 Bot'),
+              ),
+              ButtonSegment<SplendorSeatControlType>(
+                value: SplendorSeatControlType.aiPlayer,
+                icon: Icon(Icons.auto_awesome_rounded),
+                label: Text('AI 玩家'),
               ),
             ],
-            selected: {playerType.value},
+            selected: {seatControlType.value},
             showSelectedIcon: false,
             onSelectionChanged: (values) {
               final selected = values.firstOrNull;

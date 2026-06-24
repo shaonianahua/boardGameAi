@@ -98,6 +98,19 @@ class SplendorApi {
     return SplendorBotActionResponse.fromJson(_data(response));
   }
 
+  /// 调用 `POST /api/splendor/sessions/:sessionId/ai/act` 让当前 AI 玩家自动行动。
+  ///
+  /// 后端会调用模型在合法行动中选择；模型失败时会回退本地 Bot 并返回 fallback 标记。
+  Future<SplendorAiPlayerActionResponse> actAiPlayer(String sessionId) async {
+    final response = await _request(
+      () => _apiClient.post<Map<String, dynamic>>(
+        ApiPaths.splendorAiAct(sessionId),
+        data: const <String, dynamic>{},
+      ),
+    );
+    return SplendorAiPlayerActionResponse.fromJson(_data(response));
+  }
+
   /// 调用 `POST /api/splendor/sessions/:sessionId/ai/decide` 获取真人当前回合策略建议。
   ///
   /// 第一版只请求结构化建议，不执行行动；后续接入大模型或流式输出时仍从这里统一封装。

@@ -29,11 +29,11 @@ class SplendorCreateSessionController extends GetxController {
         (index) => TextEditingController(text: '玩家${index + 1}'),
       );
 
-  /// 当前表单里每个座位的玩家类型，固定保留 4 个以覆盖 2-4 人。
-  final List<Rx<SplendorPlayerType>> playerTypes =
-      List<Rx<SplendorPlayerType>>.generate(
+  /// 当前表单里每个座位的控制方式，固定保留 4 个以覆盖 2-4 人。
+  final List<Rx<SplendorSeatControlType>> seatControlTypes =
+      List<Rx<SplendorSeatControlType>>.generate(
         4,
-        (_) => SplendorPlayerType.human.obs,
+        (_) => SplendorSeatControlType.human.obs,
       );
 
   /// 更新玩家人数。
@@ -41,12 +41,12 @@ class SplendorCreateSessionController extends GetxController {
     playerCount.value = value;
   }
 
-  /// 设置某个座位是真人还是 Bot。
-  void setPlayerType(int index, SplendorPlayerType type) {
-    if (index < 0 || index >= playerTypes.length) {
+  /// 设置某个座位由真人、本地 Bot 还是 AI 玩家控制。
+  void setSeatControlType(int index, SplendorSeatControlType type) {
+    if (index < 0 || index >= seatControlTypes.length) {
       return;
     }
-    playerTypes[index].value = type;
+    seatControlTypes[index].value = type;
   }
 
   /// 创建璀璨宝石对局，成功后进入桌面页。
@@ -68,10 +68,8 @@ class SplendorCreateSessionController extends GetxController {
         for (var index = 0; index < players.length; index += 1)
           SplendorCreatePlayerInput(
             name: players[index],
-            type: playerTypes[index].value,
-            botLevel: playerTypes[index].value == SplendorPlayerType.bot
-                ? 'balanced'
-                : null,
+            type: seatControlTypes[index].value.playerType,
+            botLevel: seatControlTypes[index].value.botLevel,
           ),
       ];
 

@@ -4,7 +4,7 @@
 
 ## 目标
 
-本项目 V2 开始接入 DeepSeek 等云端大模型，让 AI 能在璀璨宝石对局中提供策略建议；本地 Bot 仍使用启发式策略自动陪玩。V3 再考虑让大模型接管 Bot 玩家或承担复盘增强。
+本项目 V2 开始接入 DeepSeek 等云端大模型，让 AI 能在璀璨宝石对局中提供策略建议；本地 Bot 使用启发式策略自动陪玩。当前已开始支持 `botLevel=ai` 的 AI 玩家自动行动，V3 再继续增强复盘能力和更高质量 Bot。
 
 AI 功能的边界：
 
@@ -45,6 +45,7 @@ Flutter
 V2 同时做两条 AI 相关能力：
 
 - 本地 Bot：不调用大模型，只根据合法行动和评分函数自动选择行动，用于人机对局和模型失败兜底。
+- AI 玩家：创建对局时仍使用 `type=bot`，但 `botLevel=ai`；行动时调用大模型选择合法行动，失败后临时回退本地 Bot。
 - AI 建议：真人玩家点击按钮后调用大模型，返回推荐行动、理由、备选方案、对手威胁和风险提示。V2 第一版先建议不代操作，后续再加“采纳建议”。
 
 V2 的 AI 建议重点不是普通聊天框，而是“AI 读懂当前桌面并给出可执行策略”：
@@ -191,6 +192,14 @@ POST /api/splendor/sessions/:sessionId/ai/stream
 ```
 
 流式接口优先输出展示内容，最终再输出结构化 `decision`。后端调用 DeepSeek `stream: true`，把模型自然语言 chunk 转成业务 `delta` 事件立即发送；模型最后输出 `<FINAL_JSON>...</FINAL_JSON>`，后端拼完整后解析、校验 `actionId`，再发送 `result` 事件。前端 `SplendorAiAdvicePanel` 会展示逐段分析文本，并在 `result` 事件到达后复用原结构化建议区块。
+
+AI 玩家自动行动接口已新增：
+
+```text
+POST /api/splendor/sessions/:sessionId/ai/act
+```
+
+它只允许当前玩家是 `type=bot` 且 `botLevel=ai`。后端会复用非流式 advisor 生成推荐行动，然后再次通过规则引擎提交。模型失败、网络失败或输出非法时，不重试，直接使用本地启发式 fallback 行动，返回中通过 `fallbackToLocalBot` 标明本次是否临时由本地 Bot 接管。
 
 ## 必须先补的能力
 
