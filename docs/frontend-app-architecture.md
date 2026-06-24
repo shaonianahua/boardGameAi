@@ -16,7 +16,7 @@
 
 - 页面展示和交互。
 - 创建对局时支持真人 / Bot 座位。
-- Bot 回合自动推进，并展示“Bot 思考中”和行动结果。
+- Bot 回合自动推进，并展示“Bot 思考中”；Bot 行动结果进入行动历史，不再用顶部弹窗打断操作。
 - 真人回合支持“AI 建议”入口。
 - AI 建议面板展示推荐行动、理由、备选行动、对手威胁和风险。
 - 后续流式输出和桌面元素高亮可以复用同一套建议模型。
@@ -743,7 +743,7 @@ Get.offNamed(AppRoutes.splendorTable, arguments: sessionResponse);
 - 行动按钮应优先基于 `SplendorApi.getLegalActions` 返回内容展示。
 - 提交行动后使用 `SplendorApi.submitAction` 返回的新 `state` 刷新页面。
 - Bot 行动后使用 `SplendorApi.actBot` 返回的新 `state` 刷新页面。
-- AI 建议面板可以展示“执行推荐行动”按钮；按钮通过 controller 校验当前合法行动后提交，不在页面里直接执行规则。
+- AI 建议面板可以展示“执行推荐行动”按钮；按钮通过 controller 校验当前合法行动后提交，执行成功后清空旧建议并关闭面板。
 - 本页不重新实现后端已有的规则判断，只做必要的 UI 禁用和提示。
 - 页面只拼接布局，接口请求和状态变更放在 `SplendorTableController`。
 
@@ -824,10 +824,11 @@ await CardActionsSheet.show(
 - `refreshSession()`：拉取当前对局快照。
 - `loadLegalActions()`：拉取当前合法行动。
 - `loadActionHistory()`：拉取当前对局行动历史。
-- `submitLegalAction(SplendorLegalAction legalAction)`：提交后端返回的合法行动。
-- `actCurrentBot()`：调用后端 Bot 自动行动接口，更新状态并提示 Bot 决策原因。
+- `submitLegalAction(SplendorLegalAction legalAction)`：提交后端返回的合法行动；普通行动成功后只刷新状态和历史，不再弹出每步成功提示。
+- `_submitLegalAction(SplendorLegalAction legalAction)`：内部提交方法，返回是否成功；AI 推荐执行需要根据结果清空旧建议。
+- `actCurrentBot()`：调用后端 Bot 自动行动接口并更新状态；Bot 决策原因保留在日志和行动历史中，不弹出顶部提示。
 - `requestAiAdvice()`：为当前真人玩家请求 AI 建议；优先走流式接口，失败时回退非流式接口，只更新建议展示状态。
-- `executeAiRecommendedAction()`：执行当前 AI 建议中的推荐行动；提交前会确认推荐行动仍存在于当前合法行动列表，过期则提示重新获取建议。
+- `executeAiRecommendedAction()`：执行当前 AI 建议中的推荐行动；提交前会确认推荐行动仍存在于当前合法行动列表，成功后清空 `aiAdvice` 和 `aiAdviceStreamLines`，避免继续展示过期建议。
 - `_findMatchingLegalAction(SplendorLegalAction recommendedAction)`：在当前合法行动列表中查找与 AI 推荐行动 payload 完全一致的行动。
 - `_isSameActionPayload(Object? left, Object? right)`：深度比较两个行动 payload，支持嵌套 Map/List，用于避免执行已经过期或不合法的推荐行动。
 - `_requestAiAdviceStreamWithRetry(String sessionId)`：AI 流式请求网络中断时保留已输出文本并自动重试，重连后明确提示“以下为重新生成内容”；默认最多重试 3 次。
@@ -838,10 +839,10 @@ await CardActionsSheet.show(
 - `_appendAiAdviceStreamText(String text, { required bool appendToLastLine })`：把流式文本追加到实时分析展示区；模型 delta 默认合并到上一行，避免一个字一个字变成多行。
 - `_AiAdviceStreamDisplayFilter`：过滤模型原生流中的 `<FINAL_JSON>`、半截 `<FINAL_JSON`、JSON 片段和 markdown 标识，只把自然语言分析交给 UI 展示。
 - `_scheduleBotAutoAction()`：当前玩家是 Bot 时延迟触发自动行动；连续 Bot 会在成功行动后继续推进。
-- `_showAwardedNobleMessage(...)`：提交行动后对比玩家前后贵族列表，如果本回合自动获得贵族，则显示底部提示。
+- `_showAwardedNobleMessage(...)`：提交行动后对比玩家前后贵族列表，如果本回合自动获得贵族，则显示关键提示。
 - `_nobleById(String nobleId)`：从已加载 catalog 中查找贵族，仅用于获得贵族提示文案。
 - `_isHeuristicFallback(SplendorAiAdviceResponse response)`：根据建议理由判断本次是否是模型失败后的本地启发式 fallback，仅用于前端日志。
-- `_showMessage(String message)`：桌面页轻量提示统一显示在顶部，避免底部 snackbar 挡住玩家操作区。
+- `_showMessage(String message)`：桌面页轻量提示统一显示在顶部；只用于错误、AI 执行成功、贵族获得、终局等关键事件，不再用于真人或 Bot 的普通行动成功提示。
 
 用法：
 
@@ -1109,7 +1110,7 @@ final lookup = SplendorCatalogLookup(controller.catalog.value);
 - 支持展示 AI 流式接口逐段返回的实时分析文本。
 - 生成中展示完整实时分析；生成完成且已有最终建议时，实时分析区域只保留最后 3 行摘要。
 - 展示推荐结论、推荐行动、置信度、推荐理由、备选行动、对手威胁和风险提示。
-- 最终建议返回后，如果存在 `selectedAction`，展示“执行推荐行动”按钮；按钮只触发回调，真正提交由 controller 处理。
+- 最终建议返回后，如果存在 `selectedAction`，展示“执行推荐行动”按钮；按钮只触发回调，真正提交由 controller 处理，成功后外层关闭 bottom sheet。
 
 核心类：
 
@@ -1125,7 +1126,7 @@ final lookup = SplendorCatalogLookup(controller.catalog.value);
 - `isLoading`：当前是否正在生成 AI 建议，用于禁用面板内按钮和显示加载文案。
 - `isExecutingAction`：当前是否正在提交行动，用于禁用“执行推荐行动”按钮和展示执行中状态。
 - `onRequestAdvice`：面板内请求建议按钮回调，由 controller 负责实际接口调用。
-- `onExecuteRecommendedAction`：面板内执行推荐行动按钮回调，由 controller 校验合法性后复用 `submitLegalAction` 提交。
+- `onExecuteRecommendedAction`：面板内执行推荐行动按钮回调，由 controller 校验合法性后复用提交流程，成功后清空旧建议。
 - `onClose`：关闭 bottom sheet 的回调。
 - `scrollController`：可选滚动控制器，bottom sheet 内传入以协调拖拽滚动。
 

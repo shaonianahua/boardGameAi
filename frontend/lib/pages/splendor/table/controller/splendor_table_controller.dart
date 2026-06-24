@@ -157,11 +157,16 @@ class SplendorTableController extends GetxController {
 
   /// 提交一条后端返回的合法行动，并用返回的新状态刷新页面。
   Future<void> submitLegalAction(SplendorLegalAction legalAction) async {
+    await _submitLegalAction(legalAction);
+  }
+
+  /// 提交合法行动并返回是否成功，供 AI 推荐执行后清理旧建议使用。
+  Future<bool> _submitLegalAction(SplendorLegalAction legalAction) async {
     final session = sessionResponse.value;
     final playerIndex = legalActions.value?.playerIndex;
     if (session == null || playerIndex == null) {
       _showMessage('当前行动数据不完整');
-      return;
+      return false;
     }
     final beforeState = session.state;
     final beforePlayer = session.state.players[playerIndex];
@@ -182,10 +187,6 @@ class SplendorTableController extends GetxController {
         players: session.players,
         state: response.state,
       );
-      _showSubmittedActionMessage(
-        legalAction: legalAction,
-        playerName: beforePlayer.name,
-      );
       _showAwardedNobleMessage(
         playerBefore: beforePlayer,
         playerAfter: response.state.players[playerIndex],
@@ -200,6 +201,7 @@ class SplendorTableController extends GetxController {
       );
       await loadLegalActions();
       await loadActionHistory();
+      return true;
     } on ApiException catch (error) {
       _showMessage(error.error.message);
     } catch (_) {
@@ -208,6 +210,7 @@ class SplendorTableController extends GetxController {
       isSubmittingAction.value = false;
       _scheduleBotAutoAction();
     }
+    return false;
   }
 
   /// 如果当前轮到 Bot，则延迟触发后端 Bot 自动行动。
@@ -292,7 +295,6 @@ class SplendorTableController extends GetxController {
         players: session.players,
         state: response.state,
       );
-      _showMessage('${beforePlayer.name}：${response.decision.reason}');
       _showAwardedNobleMessage(
         playerBefore: beforePlayer,
         playerAfter: response.state.players[beforePlayer.seatIndex],
@@ -421,7 +423,14 @@ class SplendorTableController extends GetxController {
       return;
     }
 
-    await submitLegalAction(matchedAction);
+    final executed = await _submitLegalAction(matchedAction);
+    if (!executed) {
+      return;
+    }
+
+    aiAdvice.value = null;
+    aiAdviceStreamLines.clear();
+    _showMessage('已执行 AI 推荐行动');
   }
 
   /// 从当前合法行动中查找和 AI 推荐行动完全一致的一项。
@@ -638,27 +647,6 @@ class SplendorTableController extends GetxController {
     );
   }
 
-  /// 根据提交行动类型显示轻量成功提示，不参与规则判断。
-  void _showSubmittedActionMessage({
-    required SplendorLegalAction legalAction,
-    required String playerName,
-  }) {
-    final action = legalAction.action;
-    final payload = action.payload;
-    final message = switch (action.type) {
-      SplendorActionType.takeTokens =>
-        '$playerName 拿取了${_tokenText(payload['tokens'])}',
-      SplendorActionType.reserveCard => '$playerName 预留了卡牌',
-      SplendorActionType.buyCard =>
-        '$playerName 购买了${_cardText(payload['cardId'] as String?)}',
-      SplendorActionType.discardTokens =>
-        '$playerName 弃掉了${_tokenText(payload['tokens'])}',
-      SplendorActionType.chooseNoble => '$playerName 选择了贵族',
-      SplendorActionType.nobleVisit => '$playerName 获得了贵族',
-    };
-    _showMessage(message);
-  }
-
   /// 对比行动提交前后的玩家贵族列表，提示本回合自动获得的贵族。
   void _showAwardedNobleMessage({
     required SplendorPlayerState playerBefore,
@@ -734,55 +722,6 @@ class SplendorTableController extends GetxController {
       return '玩家';
     }
     return state.players[playerIndex].name;
-  }
-
-  /// 根据卡牌 ID 生成简短中文描述，用于行动成功提示。
-  String _cardText(String? cardId) {
-    if (cardId == null) {
-      return '卡牌';
-    }
-
-    final cards = catalog.value?.cards;
-    if (cards == null) {
-      return '卡牌';
-    }
-
-    for (final card in cards) {
-      if (card.id == cardId) {
-        return '${_gemName(card.bonusColor)}色${card.prestige}分卡';
-      }
-    }
-    return '卡牌';
-  }
-
-  /// 把行动 payload 中的宝石 map 转成中文数量描述。
-  String _tokenText(Object? value) {
-    if (value is! Map<String, dynamic>) {
-      return '宝石';
-    }
-
-    final entries = <String>[];
-    for (final colorKey in ['white', 'blue', 'green', 'red', 'black', 'gold']) {
-      final count = value[colorKey];
-      if (count is int && count > 0) {
-        entries.add('${_gemName(colorKey)}$count');
-      }
-    }
-
-    return entries.isEmpty ? '宝石' : entries.join('、');
-  }
-
-  /// 把后端宝石颜色 key 转成中文短名称。
-  String _gemName(String colorKey) {
-    return switch (colorKey) {
-      'white' => '白',
-      'blue' => '蓝',
-      'green' => '绿',
-      'red' => '红',
-      'black' => '黑',
-      'gold' => '金',
-      _ => colorKey,
-    };
   }
 }
 

@@ -37,7 +37,7 @@ class SplendorAiAdvicePanel extends StatelessWidget {
   final VoidCallback onRequestAdvice;
 
   /// 点击执行推荐行动按钮时触发，由 controller 校验并提交行动。
-  final VoidCallback onExecuteRecommendedAction;
+  final Future<void> Function() onExecuteRecommendedAction;
 
   /// bottom sheet 关闭回调。
   final VoidCallback onClose;
