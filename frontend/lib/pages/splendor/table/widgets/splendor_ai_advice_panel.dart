@@ -6,14 +6,16 @@ import '../splendor_card_style_helpers.dart';
 
 /// AI 策略建议底部面板。
 ///
-/// 面板负责展示上一条结构化建议，并提供手动请求入口；不在这里执行推荐行动。
+/// 面板负责展示上一条结构化建议，并把请求和执行推荐行动交给外层 controller。
 class SplendorAiAdvicePanel extends StatelessWidget {
   /// 构造 AI 建议面板。
   const SplendorAiAdvicePanel({
     required this.advice,
     required this.streamLines,
     required this.isLoading,
+    required this.isExecutingAction,
     required this.onRequestAdvice,
+    required this.onExecuteRecommendedAction,
     required this.onClose,
     this.scrollController,
     super.key,
@@ -28,8 +30,14 @@ class SplendorAiAdvicePanel extends StatelessWidget {
   /// 当前是否正在请求 AI 建议，用于禁用按钮和展示加载状态。
   final bool isLoading;
 
+  /// 当前是否正在提交行动，用于禁用“执行推荐行动”按钮。
+  final bool isExecutingAction;
+
   /// 点击面板内建议按钮时触发，由 controller 负责实际接口调用。
   final VoidCallback onRequestAdvice;
+
+  /// 点击执行推荐行动按钮时触发，由 controller 校验并提交行动。
+  final VoidCallback onExecuteRecommendedAction;
 
   /// bottom sheet 关闭回调。
   final VoidCallback onClose;
@@ -112,6 +120,25 @@ class SplendorAiAdvicePanel extends StatelessWidget {
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       fontWeight: FontWeight.w800,
                       color: colorScheme.onSurface.withValues(alpha: 0.72),
+                    ),
+                  ),
+                  SizedBox(height: 10.h),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: isLoading || isExecutingAction
+                          ? null
+                          : onExecuteRecommendedAction,
+                      icon: isExecutingAction
+                          ? SizedBox(
+                              width: 16.w,
+                              height: 16.w,
+                              child: const CircularProgressIndicator(
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : const Icon(Icons.play_arrow_rounded),
+                      label: Text(isExecutingAction ? '正在执行行动' : '执行推荐行动'),
                     ),
                   ),
                 ],

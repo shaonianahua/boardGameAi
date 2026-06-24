@@ -380,7 +380,7 @@ class SplendorAiAdviceDecision {
 
 /// AI 建议接口响应。
 ///
-/// `selectedAction` 只用于展示推荐行动，不会在前端自动执行。
+/// `selectedAction` 用于展示推荐行动，也可由用户确认后一键提交。
 class SplendorAiAdviceResponse {
   /// 构造 AI 建议响应。
   const SplendorAiAdviceResponse({

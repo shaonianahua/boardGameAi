@@ -316,7 +316,10 @@ class _SplendorTablePageState extends State<SplendorTablePage> {
                 advice: controller.aiAdvice.value,
                 streamLines: controller.aiAdviceStreamLines.toList(),
                 isLoading: controller.isLoadingAiAdvice.value,
+                isExecutingAction: controller.isSubmittingAction.value,
                 onRequestAdvice: controller.requestAiAdvice,
+                onExecuteRecommendedAction:
+                    controller.executeAiRecommendedAction,
                 scrollController: scrollController,
                 onClose: () => Navigator.of(context).pop(),
               );

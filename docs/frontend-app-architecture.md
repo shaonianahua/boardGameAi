@@ -743,7 +743,7 @@ Get.offNamed(AppRoutes.splendorTable, arguments: sessionResponse);
 - 行动按钮应优先基于 `SplendorApi.getLegalActions` 返回内容展示。
 - 提交行动后使用 `SplendorApi.submitAction` 返回的新 `state` 刷新页面。
 - Bot 行动后使用 `SplendorApi.actBot` 返回的新 `state` 刷新页面。
-- AI 建议只展示推荐内容，不自动执行行动；采纳建议要等后续明确交互再开发。
+- AI 建议面板可以展示“执行推荐行动”按钮；按钮通过 controller 校验当前合法行动后提交，不在页面里直接执行规则。
 - 本页不重新实现后端已有的规则判断，只做必要的 UI 禁用和提示。
 - 页面只拼接布局，接口请求和状态变更放在 `SplendorTableController`。
 
@@ -826,7 +826,10 @@ await CardActionsSheet.show(
 - `loadActionHistory()`：拉取当前对局行动历史。
 - `submitLegalAction(SplendorLegalAction legalAction)`：提交后端返回的合法行动。
 - `actCurrentBot()`：调用后端 Bot 自动行动接口，更新状态并提示 Bot 决策原因。
-- `requestAiAdvice()`：为当前真人玩家请求 AI 建议；优先走流式接口，失败时回退非流式接口，不执行推荐行动。
+- `requestAiAdvice()`：为当前真人玩家请求 AI 建议；优先走流式接口，失败时回退非流式接口，只更新建议展示状态。
+- `executeAiRecommendedAction()`：执行当前 AI 建议中的推荐行动；提交前会确认推荐行动仍存在于当前合法行动列表，过期则提示重新获取建议。
+- `_findMatchingLegalAction(SplendorLegalAction recommendedAction)`：在当前合法行动列表中查找与 AI 推荐行动 payload 完全一致的行动。
+- `_isSameActionPayload(Object? left, Object? right)`：深度比较两个行动 payload，支持嵌套 Map/List，用于避免执行已经过期或不合法的推荐行动。
 - `_requestAiAdviceStreamWithRetry(String sessionId)`：AI 流式请求网络中断时保留已输出文本并自动重试，重连后明确提示“以下为重新生成内容”；默认最多重试 3 次。
 - `_consumeAiAdviceStream(String sessionId)`：消费一次 AI SSE 流，把 `delta` 文本和 `result` 结构化建议分别写入页面状态。
 - `_aiAdviceRetryDelay(int attempt)`：AI 流式自动重试的指数退避间隔，当前依次为 1、2、4 秒。
@@ -1106,7 +1109,7 @@ final lookup = SplendorCatalogLookup(controller.catalog.value);
 - 支持展示 AI 流式接口逐段返回的实时分析文本。
 - 生成中展示完整实时分析；生成完成且已有最终建议时，实时分析区域只保留最后 3 行摘要。
 - 展示推荐结论、推荐行动、置信度、推荐理由、备选行动、对手威胁和风险提示。
-- 第一版只读展示，不提供采纳建议或自动执行行动。
+- 最终建议返回后，如果存在 `selectedAction`，展示“执行推荐行动”按钮；按钮只触发回调，真正提交由 controller 处理。
 
 核心类：
 
@@ -1120,17 +1123,20 @@ final lookup = SplendorCatalogLookup(controller.catalog.value);
 - `advice`：可空的 `SplendorAiAdviceResponse`，来自 controller 中缓存的最近一次 `SplendorApi.requestAiAdvice` 结果。
 - `streamLines`：AI 流式接口逐段返回的文本列表，来自 controller 的 `aiAdviceStreamLines`。
 - `isLoading`：当前是否正在生成 AI 建议，用于禁用面板内按钮和显示加载文案。
+- `isExecutingAction`：当前是否正在提交行动，用于禁用“执行推荐行动”按钮和展示执行中状态。
 - `onRequestAdvice`：面板内请求建议按钮回调，由 controller 负责实际接口调用。
+- `onExecuteRecommendedAction`：面板内执行推荐行动按钮回调，由 controller 校验合法性后复用 `submitLegalAction` 提交。
 - `onClose`：关闭 bottom sheet 的回调。
 - `scrollController`：可选滚动控制器，bottom sheet 内传入以协调拖拽滚动。
 
 维护规则：
 
-- 面板不直接持有 API；只通过 `onRequestAdvice` 通知 controller 请求接口，不直接提交行动。
+- 面板不直接持有 API；请求建议和执行推荐行动都通过回调通知 controller。
+- 执行推荐行动前必须由 controller 重新匹配当前 `legalActions`，不能只信任旧 AI 响应。
 - 生成期间 `isLoading=true` 时，面板内建议按钮必须禁用，避免重复请求模型。
 - 关闭再打开 AI 建议面板时，应继续展示 controller 缓存的上一条建议，避免用户误关弹窗后看不到结果。
 - 面板只展示后端已经校验过的推荐行动和解释。
-- 后续流式输出、桌面高亮或“采纳建议”应在保持该面板只负责展示的前提下新增明确回调。
+- 后续桌面高亮仍应在保持该面板只负责展示和触发回调的前提下新增明确参数。
 
 ### `frontend/lib/pages/splendor/table/widgets/splendor_game_result_panel.dart`
 
@@ -1476,7 +1482,7 @@ final textTheme = Theme.of(context).textTheme;
 下一步建议按以下顺序增加文件，并同步更新本文档：
 
 1. 接入真实大模型 Provider 前，先保持 `SplendorAiAdvicePanel` 的结构化字段稳定。
-2. 后续可在 AI 建议面板增加流式输出和桌面轻量高亮，但不要让面板直接执行行动。
+2. 后续可在 AI 建议面板增加桌面轻量高亮，但不要把规则判断写进面板。
 3. 继续优化卡面排版，必要时再把卡牌/贵族 tile 抽成可复用组件。
 
 每一步都先保证职责清晰，不把规则逻辑写进页面。

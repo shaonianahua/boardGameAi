@@ -401,6 +401,74 @@ class SplendorTableController extends GetxController {
     }
   }
 
+  /// 执行当前 AI 建议中的推荐行动。
+  ///
+  /// 提交前会校验该行动仍在当前合法行动列表中，避免局面变化后执行过期建议。
+  Future<void> executeAiRecommendedAction() async {
+    final recommendedAction = aiAdvice.value?.selectedAction;
+    if (recommendedAction == null) {
+      _showMessage('当前没有可执行的 AI 推荐行动');
+      return;
+    }
+    if (isLoadingAiAdvice.value) {
+      _showMessage('AI 建议还在生成中，请稍后再执行');
+      return;
+    }
+
+    final matchedAction = _findMatchingLegalAction(recommendedAction);
+    if (matchedAction == null) {
+      _showMessage('推荐行动已不适用于当前局面，请重新获取 AI 建议');
+      return;
+    }
+
+    await submitLegalAction(matchedAction);
+  }
+
+  /// 从当前合法行动中查找和 AI 推荐行动完全一致的一项。
+  SplendorLegalAction? _findMatchingLegalAction(
+    SplendorLegalAction recommendedAction,
+  ) {
+    final actions =
+        legalActions.value?.actions ?? const <SplendorLegalAction>[];
+    for (final legalAction in actions) {
+      if (_isSameActionPayload(
+        legalAction.action.payload,
+        recommendedAction.action.payload,
+      )) {
+        return legalAction;
+      }
+    }
+    return null;
+  }
+
+  /// 对比两个 action payload 是否一致，支持嵌套 Map/List 的深度比较。
+  bool _isSameActionPayload(Object? left, Object? right) {
+    if (left is Map && right is Map) {
+      if (left.length != right.length) {
+        return false;
+      }
+      for (final entry in left.entries) {
+        if (!right.containsKey(entry.key) ||
+            !_isSameActionPayload(entry.value, right[entry.key])) {
+          return false;
+        }
+      }
+      return true;
+    }
+    if (left is List && right is List) {
+      if (left.length != right.length) {
+        return false;
+      }
+      for (var index = 0; index < left.length; index += 1) {
+        if (!_isSameActionPayload(left[index], right[index])) {
+          return false;
+        }
+      }
+      return true;
+    }
+    return left == right;
+  }
+
   /// 请求 AI 流式建议并在网络中断时自动重试。
   ///
   /// 重试会保留旧的流式文本，并在重新连接后提示后续内容为重新生成。
