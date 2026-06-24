@@ -236,6 +236,9 @@ class SplendorTableController extends GetxController {
     });
   }
 
+  /// 判断当前状态是否满足 Bot 自动行动条件。
+  ///
+  /// 只有对局进行中、当前玩家是 Bot 且没有其他提交动作时才返回 true。
   bool _shouldBotAct(SplendorGameState state) {
     if (state.status != SplendorSessionStatus.active) {
       return false;
@@ -398,6 +401,9 @@ class SplendorTableController extends GetxController {
     }
   }
 
+  /// 请求 AI 流式建议并在网络中断时自动重试。
+  ///
+  /// 重试会保留旧的流式文本，并在重新连接后提示后续内容为重新生成。
   Future<SplendorAiAdviceResponse?> _requestAiAdviceStreamWithRetry(
     String sessionId,
   ) async {
@@ -439,6 +445,9 @@ class SplendorTableController extends GetxController {
     return null;
   }
 
+  /// 消费 AI 建议 SSE 事件流，实时更新展示文本并保存最终结构化结果。
+  ///
+  /// `delta` 事件用于渐进展示，`result` 事件用于更新 `aiAdvice`。
   Future<SplendorAiAdviceResponse?> _consumeAiAdviceStream(
     String sessionId,
   ) async {
@@ -480,10 +489,12 @@ class SplendorTableController extends GetxController {
     return finalResponse;
   }
 
+  /// 根据重试次数计算 AI 流式建议的指数退避时间。
   Duration _aiAdviceRetryDelay(int attempt) {
     return Duration(seconds: 1 << attempt);
   }
 
+  /// 流式接口不可用时请求非流式建议，作为兼容兜底方案。
   Future<SplendorAiAdviceResponse?> _requestAiAdviceFallback(
     String sessionId,
   ) async {
@@ -501,6 +512,7 @@ class SplendorTableController extends GetxController {
     return null;
   }
 
+  /// 判断 AI 流式错误是否属于可自动重试的网络中断类问题。
   bool _isNetworkInterrupted(ApiException error) {
     return switch (error.error.code) {
       'NETWORK_INTERRUPTED' ||
@@ -511,6 +523,7 @@ class SplendorTableController extends GetxController {
     };
   }
 
+  /// 追加或拼接 AI 流式展示文本，供底部建议面板实时刷新。
   void _appendAiAdviceStreamText(
     String text, {
     required bool appendToLastLine,
@@ -528,12 +541,14 @@ class SplendorTableController extends GetxController {
         '${aiAdviceStreamLines.last}$cleanedText';
   }
 
+  /// 判断 AI 建议是否由后端本地启发式兜底生成。
   bool _isHeuristicFallback(SplendorAiAdviceResponse response) {
     return response.decision.reasoning.any(
       (reason) => reason.contains('模型建议暂不可用') || reason.contains('回退本地启发式'),
     );
   }
 
+  /// 获取当前玩家类型名称，用于 Bot 调试日志。
   String? _currentPlayerTypeName(SplendorGameState? state) {
     if (state == null ||
         state.currentPlayerIndex < 0 ||
@@ -543,6 +558,7 @@ class SplendorTableController extends GetxController {
     return state.players[state.currentPlayerIndex].type.name;
   }
 
+  /// 在桌面页顶部展示轻量提示，避免遮挡底部行动区域。
   void _showMessage(String message) {
     Get.snackbar(
       '璀璨宝石',
@@ -642,6 +658,7 @@ class SplendorTableController extends GetxController {
     return null;
   }
 
+  /// 根据玩家下标获取展示名称；下标无效时返回通用“玩家”。
   String _playerName(SplendorGameState state, int? playerIndex) {
     if (playerIndex == null ||
         playerIndex < 0 ||
@@ -651,6 +668,7 @@ class SplendorTableController extends GetxController {
     return state.players[playerIndex].name;
   }
 
+  /// 根据卡牌 ID 生成简短中文描述，用于行动成功提示。
   String _cardText(String? cardId) {
     if (cardId == null) {
       return '卡牌';
@@ -669,6 +687,7 @@ class SplendorTableController extends GetxController {
     return '卡牌';
   }
 
+  /// 把行动 payload 中的宝石 map 转成中文数量描述。
   String _tokenText(Object? value) {
     if (value is! Map<String, dynamic>) {
       return '宝石';
@@ -685,6 +704,7 @@ class SplendorTableController extends GetxController {
     return entries.isEmpty ? '宝石' : entries.join('、');
   }
 
+  /// 把后端宝石颜色 key 转成中文短名称。
   String _gemName(String colorKey) {
     return switch (colorKey) {
       'white' => '白',
@@ -710,6 +730,9 @@ class _AiAdviceStreamDisplayFilter {
   final StringBuffer _buffer = StringBuffer();
   bool _stopped = false;
 
+  /// 接收一个模型 delta chunk，返回可以展示给用户的安全文本。
+  ///
+  /// 发现 `<FINAL_JSON>` 后会停止输出，避免结构化 JSON 泄露到 UI。
   String append(String chunk) {
     if (_stopped || chunk.isEmpty) {
       return '';
@@ -736,6 +759,7 @@ class _AiAdviceStreamDisplayFilter {
     return _cleanVisibleText(visible);
   }
 
+  /// 在流结束时吐出缓冲区剩余文本，已经进入 JSON 段时返回空字符串。
   String flush() {
     if (_stopped) {
       _buffer.clear();
@@ -746,11 +770,13 @@ class _AiAdviceStreamDisplayFilter {
     return visible;
   }
 
+  /// 手动停止文本输出，并清空尚未展示的缓冲内容。
   void stop() {
     _stopped = true;
     _buffer.clear();
   }
 
+  /// 清理模型输出中的 JSON 标记和代码块标记，只保留自然语言展示内容。
   String _cleanVisibleText(String text) {
     final cleanedText = text
         .replaceAll('</FINAL_JSON>', '')
@@ -765,6 +791,7 @@ class _AiAdviceStreamDisplayFilter {
     return cleanedText;
   }
 
+  /// 粗略判断文本是否像最终 JSON 片段，防止半截结构化内容显示到面板。
   bool _looksLikeJsonFragment(String text) {
     if (text.isEmpty) {
       return false;

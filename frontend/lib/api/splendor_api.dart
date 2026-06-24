@@ -214,6 +214,7 @@ class SplendorApi {
     return data;
   }
 
+  /// 从后端响应体中提取标准 `error` 对象；没有错误时返回 null。
   ApiError? _errorFromData(Map<String, dynamic> data) {
     final error = data['error'];
     if (error is Map<String, dynamic>) {
@@ -222,6 +223,9 @@ class SplendorApi {
     return null;
   }
 
+  /// 把 Dio 的网络异常映射成稳定的业务错误码和中文提示。
+  ///
+  /// 流式请求中断时 Controller 会根据这些错误码决定是否自动重试。
   ApiError _errorFromDioException(DioException error) {
     final data = error.response?.data;
     if (data is Map<String, dynamic>) {
@@ -256,6 +260,9 @@ class SplendorApi {
     return ApiError(code: code, message: message);
   }
 
+  /// 从 SSE 文本缓冲区中取出完整事件块，保留未完成块等待下个 chunk。
+  ///
+  /// [flush] 为 true 时会在流结束时尝试解析缓冲区剩余内容。
   Stream<SplendorAiAdviceStreamEvent> _drainSseBuffer(
     StringBuffer buffer, {
     required bool flush,
@@ -287,6 +294,9 @@ class SplendorApi {
     }
   }
 
+  /// 解析单个 SSE block 的 `data:` 内容并转换成 AI 建议流事件。
+  ///
+  /// 空事件和 `[DONE]` 返回 null；后端标准错误会抛出 `ApiException`。
   SplendorAiAdviceStreamEvent? _parseSseBlock(String block) {
     final dataLines = block
         .split('\n')
@@ -309,6 +319,7 @@ class SplendorApi {
     return SplendorAiAdviceStreamEvent.fromJson(decoded);
   }
 
+  /// 输出 AI 流式接口专用日志，便于排查 chunk 和 SSE 解析问题。
   void _streamLog(String message) {
     debugPrint('[$_streamLogName] $message');
   }

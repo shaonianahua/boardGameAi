@@ -33,6 +33,7 @@ class ApiClient {
 
   final Dio _dio;
 
+  /// 暴露底层 Dio，供测试注入拦截器或极少数特殊请求场景使用。
   Dio get dio => _dio;
 
   /// 设置或清除 Bearer Token。
@@ -176,6 +177,9 @@ class ApiClient {
     );
   }
 
+  /// 创建 Dio 日志拦截器，统一记录请求、响应和错误信息。
+  ///
+  /// 只负责日志侧效应，不改变请求或响应内容。
   InterceptorsWrapper _createLogInterceptor() {
     return InterceptorsWrapper(
       onRequest: (options, handler) {
@@ -193,10 +197,12 @@ class ApiClient {
     );
   }
 
+  /// 输出网络日志，统一加上 `api.client` 前缀方便 IDE 过滤。
   void _writeLog(String message) {
     debugPrint('[$_logName] $message');
   }
 
+  /// 格式化请求日志，包含路径、query、header 和 body。
   String _formatRequestLog(RequestOptions options) {
     return _clipLog(
       'request ${options.method} ${options.uri}\n'
@@ -207,6 +213,7 @@ class ApiClient {
     );
   }
 
+  /// 格式化响应日志，包含状态码、响应头和响应体。
   String _formatResponseLog(Response<dynamic> response) {
     return _clipLog(
       'response ${response.requestOptions.method} ${response.requestOptions.uri}\n'
@@ -216,6 +223,7 @@ class ApiClient {
     );
   }
 
+  /// 格式化 Dio 异常日志，保留请求信息和后端错误响应。
   String _formatErrorLog(DioException error) {
     final response = error.response;
     return _clipLog(
@@ -229,10 +237,12 @@ class ApiClient {
     );
   }
 
+  /// 合并全局 header 和单次请求 header，并对敏感字段脱敏。
   Map<String, dynamic> _mergedHeaders(RequestOptions options) {
     return _maskHeaders({..._dio.options.headers, ...options.headers});
   }
 
+  /// 遍历 header 集合，把 Authorization 等敏感字段替换成安全展示值。
   Map<String, dynamic> _maskHeaders(Map<String, dynamic> headers) {
     return headers.map((key, value) {
       final normalizedKey = key.toLowerCase();
@@ -243,6 +253,7 @@ class ApiClient {
     });
   }
 
+  /// 对 token 等敏感文本做尾保留的脱敏处理。
   String _maskSecret(Object? value) {
     final text = value?.toString() ?? '';
     if (text.isEmpty) {
@@ -254,6 +265,7 @@ class ApiClient {
     return '${text.substring(0, 8)}...${text.substring(text.length - 4)}';
   }
 
+  /// 把日志对象转成字符串，优先用 JSON 方便查看结构化参数。
   String _stringify(Object? value) {
     if (value == null) {
       return 'null';
@@ -261,6 +273,7 @@ class ApiClient {
     return value.toString();
   }
 
+  /// 截断过长日志，避免大响应或流式 chunk 挤爆调试控制台。
   String _clipLog(String text) {
     if (text.length <= _maxLogLength) {
       return text;

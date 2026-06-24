@@ -93,6 +93,7 @@ class SplendorCreateSessionController extends GetxController {
     }
   }
 
+  /// 在创建对局页展示轻量提示，主要用于表单校验和接口错误。
   void _showMessage(String message) {
     Get.snackbar(
       '创建对局',
@@ -104,6 +105,7 @@ class SplendorCreateSessionController extends GetxController {
     );
   }
 
+  /// Controller 销毁时释放玩家名称输入框，避免页面退出后持有资源。
   @override
   void onClose() {
     for (final controller in nameControllers) {
