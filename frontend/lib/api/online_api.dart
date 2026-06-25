@@ -69,6 +69,21 @@ class OnlineApi {
     return OnlineRoom.fromJson(_data(response));
   }
 
+  /// 调用 `POST /api/online/rooms/:roomCode/start` 开始游戏。
+  ///
+  /// 仅房主可调用。后端会把房间座位映射成对局玩家，创建 game_session，
+  /// 房间状态置为 `playing` 并写入 `sessionId`，然后广播 `game_started` 事件。
+  /// 若首位玩家是 Bot/AI，后端会自动驱动其回合直到轮到真人。
+  Future<Map<String, dynamic>> startGame(String roomCode, String clientId) async {
+    final response = await _request(
+      () => _apiClient.post<Map<String, dynamic>>(
+        ApiPaths.onlineRoomStart(roomCode),
+        data: {'clientId': clientId},
+      ),
+    );
+    return _data(response);
+  }
+
   /// 连接 `WebSocket /api/online/rooms/:roomCode/events` 并持续返回房间事件。
   ///
   /// 后端连接成功后会先返回 `room_snapshot`，房间座位变化时返回 `room_updated`。

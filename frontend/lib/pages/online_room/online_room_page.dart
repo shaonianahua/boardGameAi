@@ -300,6 +300,41 @@ class _RoomLobbyPanel extends StatelessWidget {
           SizedBox(height: 10.h),
         ],
         SizedBox(height: 4.h),
+
+        // 开始游戏按钮（仅房主且房间等待中时显示）
+        if (room.status == OnlineRoomStatus.waiting &&
+            room.hostSeatIndex != null) ...[
+          Builder(
+            builder: (context) {
+              final myClientId = controller.clientId.value;
+              final hostSeat = room.seats.firstWhere(
+                (seat) => seat.seatIndex == room.hostSeatIndex,
+                orElse: () => room.seats.first,
+              );
+              final isHost = hostSeat.clientId == myClientId;
+
+              if (!isHost) {
+                return const SizedBox.shrink();
+              }
+
+              return Obx(
+                () => FilledButton.icon(
+                  onPressed: controller.isSubmitting.value ||
+                          room.seats.length < 2
+                      ? null
+                      : controller.startGame,
+                  icon: const Icon(Icons.play_arrow_rounded),
+                  label: const Text('开始游戏'),
+                  style: FilledButton.styleFrom(
+                    minimumSize: Size(double.infinity, 48.h),
+                  ),
+                ),
+              );
+            },
+          ),
+          SizedBox(height: 10.h),
+        ],
+
         Row(
           children: [
             Expanded(

@@ -57,6 +57,10 @@ class ApiPaths {
   /// 在线房间离开接口，用于删除当前设备座位并通知房间内其他玩家。
   static const onlineRoomsLeave = '/api/online/rooms/leave';
 
+  /// 在线房间开始游戏接口，仅房主可调用；座位映射成玩家创建对局。
+  static String onlineRoomStart(String roomCode) =>
+      '$onlineRooms/$roomCode/start';
+
   /// 单个在线房间快照接口。
   static String onlineRoom(String roomCode) {
     return '$onlineRooms/$roomCode';

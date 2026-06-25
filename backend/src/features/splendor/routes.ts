@@ -72,10 +72,24 @@ export async function registerSplendorRoutes(app: FastifyInstance): Promise<void
   app.post('/api/splendor/sessions/:sessionId/actions', async (request, reply) => {
     try {
       const params = request.params as { sessionId: string };
-      return await submitSplendorAction(
+      const result = await submitSplendorAction(
         params.sessionId,
         request.body as SubmitSplendorActionInput,
       );
+
+      // Notify online room subscribers if this session is linked to a room
+      const { notifyGameStateChanged } = await import('../online/game-sync.js');
+      notifyGameStateChanged(params.sessionId).catch((error) => {
+        app.log.warn({ err: error }, 'game state broadcast failed');
+      });
+
+      // Drive bot/AI turns until a human player's turn
+      const { driveBotsUntilHumanTurn } = await import('../online/service.js');
+      driveBotsUntilHumanTurn(params.sessionId).catch((error) => {
+        app.log.warn({ err: error }, 'bot driving failed');
+      });
+
+      return result;
     } catch (error) {
       return reply.status(400).send(errorResponse(error));
     }

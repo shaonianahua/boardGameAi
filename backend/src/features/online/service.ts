@@ -9,7 +9,16 @@ import type {
   OnlineSeatControlType,
   PublicOnlineRoom,
   PublicOnlineRoomSeat,
+  StartOnlineGameInput,
 } from './types.js';
+import {
+  createSplendorSession,
+  getSplendorSession,
+  actSplendorBot,
+  actSplendorAiPlayer,
+  type SplendorSessionResponse,
+} from '../splendor/service.js';
+import type { SplendorPlayerState } from '../splendor/types.js';
 
 const maxSeatCount = 4;
 const roomCodeLength = 6;
@@ -283,4 +292,153 @@ function firstAvailableSeatIndex(seats: OnlineRoomSeat[]): number | null {
     }
   }
   return null;
+}
+
+/**
+ * Starts an online game from a waiting room.
+ *
+ * Validates the caller is the host, maps room seats to game players, creates
+ * a splendor session, updates the room status to 'playing', and broadcasts
+ * the game_started event. If the first player is a bot, automatically drives
+ * turns until a human player's turn.
+ */
+export async function startOnlineGame(
+  input: StartOnlineGameInput,
+): Promise<{ room: PublicOnlineRoom; session: SplendorSessionResponse }> {
+  const normalizedRoomCode = normalizeRoomCode(input.roomCode);
+  const clientId = input.clientId.trim();
+  if (!clientId) {
+    throw new Error('clientId is required');
+  }
+
+  const room = await findRoomByCode(normalizedRoomCode);
+  if (room.status !== 'waiting') {
+    throw new Error('room is not waiting');
+  }
+  if (room.seats.length < 2) {
+    throw new Error('at least 2 seats required to start');
+  }
+
+  const hostSeat = room.seats.find((seat) => seat.seatIndex === room.hostSeatIndex);
+  if (!hostSeat || hostSeat.clientId !== clientId) {
+    throw new Error('only host can start the game');
+  }
+
+  // Map seats to players in seatIndex order
+  const sortedSeats = room.seats.slice().sort((a, b) => a.seatIndex - b.seatIndex);
+  const players = sortedSeats.map((seat) => {
+    const controlType = seat.controlType as OnlineSeatControlType;
+    if (controlType === 'local_bot') {
+      return { name: seat.playerName, type: 'bot' as const, botLevel: 'local' };
+    }
+    if (controlType === 'ai_player') {
+      return { name: seat.playerName, type: 'bot' as const, botLevel: 'ai' };
+    }
+    return { name: seat.playerName, type: 'human' as const };
+  });
+
+  const session = await createSplendorSession({
+    playerCount: players.length,
+    title: `在线对局 ${room.roomCode}`,
+    players,
+  });
+
+  const updatedRoom = await prisma.onlineRoom.update({
+    where: { id: room.id },
+    data: { status: 'playing', sessionId: session.session.id },
+    include: { seats: { orderBy: { seatIndex: 'asc' } } },
+  });
+
+  const publicRoomSnapshot = publicRoom(updatedRoom);
+  broadcastOnlineRoomEvent(room.id, {
+    type: 'game_started',
+    room: publicRoomSnapshot,
+    sessionId: session.session.id,
+    state: session.state,
+  });
+
+  // Drive bot/AI turns until a human player's turn
+  await driveBotsUntilHumanTurn(session.session.id);
+
+  return { room: publicRoomSnapshot, session };
+}
+
+/**
+ * Broadcasts the latest game state to all room subscribers.
+ *
+ * Reads the session state and room snapshot, then emits a game_state_updated
+ * event. If the game is finished, also updates the room status to 'finished'
+ * and emits game_finished.
+ */
+export async function broadcastGameState(sessionId: string): Promise<void> {
+  const room = await prisma.onlineRoom.findFirst({
+    where: { sessionId },
+    include: { seats: { orderBy: { seatIndex: 'asc' } } },
+  });
+  if (!room) {
+    return; // Session not linked to an online room; skip broadcast
+  }
+
+  const session = await getSplendorSession(sessionId);
+  const isFinished = session.state.status === 'finished';
+
+  if (isFinished && room.status !== 'finished') {
+    await prisma.onlineRoom.update({
+      where: { id: room.id },
+      data: { status: 'finished' },
+    });
+    const finishedRoom = await prisma.onlineRoom.findUniqueOrThrow({
+      where: { id: room.id },
+      include: { seats: { orderBy: { seatIndex: 'asc' } } },
+    });
+    broadcastOnlineRoomEvent(room.id, {
+      type: 'game_finished',
+      room: publicRoom(finishedRoom),
+      state: session.state,
+    });
+  } else {
+    broadcastOnlineRoomEvent(room.id, {
+      type: 'game_state_updated',
+      room: publicRoom(room),
+      state: session.state,
+    });
+  }
+}
+
+/**
+ * Drives bot/AI player turns until the current player is human.
+ *
+ * Called after game start and after each action submission to ensure bots
+ * don't block the game waiting for a client request.
+ */
+export async function driveBotsUntilHumanTurn(sessionId: string): Promise<void> {
+  const maxBotTurns = 50; // Safety limit to prevent infinite loops
+  let turnCount = 0;
+
+  while (turnCount < maxBotTurns) {
+    const session = await getSplendorSession(sessionId);
+    if (session.state.status !== 'active') {
+      break; // Game ended
+    }
+
+    const currentPlayer = session.state.players[session.state.currentPlayerIndex];
+    if (!currentPlayer || currentPlayer.type === 'human') {
+      break; // Human player's turn or invalid state
+    }
+
+    // Drive one bot/AI turn
+    if (currentPlayer.botLevel === 'ai') {
+      await actSplendorAiPlayer(sessionId);
+    } else {
+      await actSplendorBot(sessionId);
+    }
+
+    // Broadcast the updated state after the bot action
+    await broadcastGameState(sessionId);
+    turnCount += 1;
+  }
+
+  if (turnCount >= maxBotTurns) {
+    throw new Error('bot turn limit exceeded; possible infinite loop');
+  }
 }

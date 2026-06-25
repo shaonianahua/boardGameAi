@@ -157,6 +157,9 @@ services/
 - `createOnlineRoom(input)`：创建等待中的联机房间，并把创建者放到 0 号座位。
 - `joinOnlineRoom(input)`：加入等待中的房间；如果同一 `clientId` 已在房间中，则更新原座位而不是新增座位。
 - `leaveOnlineRoom(input)`：按 `clientId` 删除座位并广播 `room_updated`；离开者是房主时把房主转移给剩余最小座位号，房间清空时置为 `closed`；座位已不存在时幂等返回不广播，兼容主动离开后 WebSocket 断线再触发一次。
+- `startOnlineGame(input)`：开始游戏，校验调用者是房主、房间 `waiting`、座位 ≥2；座位按 `seatIndex` 升序映射成玩家（`controlType` → `type`/`botLevel`），创建 `game_sessions` 并更新房间 `status=playing` + `sessionId`，广播 `game_started` 事件（带 `sessionId` 和初始 `state`）；若首位是 Bot/AI 则自动驱动至真人回合。
+- `broadcastGameState(sessionId)`：读取对局最新状态，向关联的在线房间广播 `game_state_updated`；对局 `finished` 时更新房间 `status=finished` 并广播 `game_finished`。
+- `driveBotsUntilHumanTurn(sessionId)`：循环驱动 Bot/AI 玩家回合直到轮到真人；开局和每次行动后调用，避免 Bot 回合阻塞等待客户端请求。
 - `getOnlineRoomByCode(roomCode)`：按房间码读取公开房间快照。
 - `subscribeOnlineRoom(roomId, socket)`：把 WebSocket 连接加入指定房间订阅集合。
 - `unsubscribeOnlineRoom(roomId, socket)`：连接关闭时移除订阅关系。
@@ -167,15 +170,20 @@ services/
 - `POST /api/online/rooms`：创建房间。
 - `POST /api/online/rooms/join`：加入房间。
 - `POST /api/online/rooms/leave`：离开房间，删除当前设备座位并广播给其他玩家。
+- `POST /api/online/rooms/:roomCode/start`：开始游戏，仅房主可调用；座位映射成玩家创建对局，房间置 `playing`，广播 `game_started`。
 - `GET /api/online/rooms/:roomCode`：查询房间。
-- `WebSocket /api/online/rooms/:roomCode/events`：订阅房间快照和更新事件；连接可带 `clientId` 查询参数，socket 断开时后端据此删除对应座位作为离开兜底。
+- `WebSocket /api/online/rooms/:roomCode/events`：订阅房间快照和更新事件；连接可带 `clientId` 查询参数，socket 断开时后端据此删除对应座位（大厅阶段）或改为 Bot 接管（对局阶段）作为离开兜底。事件类型：`room_snapshot`、`room_updated`、`game_started`、`game_state_updated`、`game_finished`。
+
+新增文件：
+
+- `game-sync.ts`：跨 feature 调用桥接层，导出 `notifyGameStateChanged(sessionId)` 供 splendor 模块在行动提交后通知在线房间广播状态。
 
 暂不包含：
 
-- 在线开始游戏。
-- 在线提交行动。
-- GameState 实时广播。
+- 在线提交行动（V4 第二阶段已实现：行动走现有 `POST /api/splendor/sessions/:id/actions`，提交后自动广播 `game_state_updated` 给房间所有人，Bot/AI 回合由后端自动驱动）。
 - 账号、好友、匹配、聊天。
+- 断线重连恢复人控（当前是 Bot 接管到终局）。
+- 终局后再来一局（当前终局后房间直接 `finished`）。
 
 ### `lib/shared/`
 

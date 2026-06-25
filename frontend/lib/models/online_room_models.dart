@@ -216,18 +216,72 @@ class OnlineRoom {
 /// 在线房间 WebSocket 事件。
 class OnlineRoomEvent {
   /// 构造一个在线房间事件。
-  const OnlineRoomEvent({required this.type, required this.room});
+  const OnlineRoomEvent({
+    required this.type,
+    required this.room,
+    this.sessionId,
+    this.state,
+  });
 
   /// 从 WebSocket JSON 解析房间事件；不含 room 的消息会返回 null。
   factory OnlineRoomEvent.fromJson(OnlineJsonMap json) {
     return OnlineRoomEvent(
       type: json['type'] as String? ?? 'unknown',
       room: OnlineRoom.fromJson(json['room'] as OnlineJsonMap),
+      sessionId: json['sessionId'] as String?,
+      state: json['state'] as Map<String, dynamic>?,
     );
   }
 
   final String type;
   final OnlineRoom room;
+
+  /// 对局会话 ID，仅 game_started 事件携带。
+  final String? sessionId;
+
+  /// 对局状态快照，game_started / game_state_updated / game_finished 事件携带。
+  final Map<String, dynamic>? state;
+
+  /// 是否为开始游戏事件。
+  bool get isGameStarted => type == 'game_started';
+
+  /// 是否为对局状态更新事件。
+  bool get isGameStateUpdated => type == 'game_state_updated';
+
+  /// 是否为对局结束事件。
+  bool get isGameFinished => type == 'game_finished';
+}
+
+/// 在线对局模式参数，用于对局页识别在线模式并订阅房间事件。
+class OnlineGameParams {
+  const OnlineGameParams({
+    required this.sessionId,
+    required this.clientId,
+    required this.roomCode,
+    required this.seats,
+  });
+
+  /// 对局会话 ID。
+  final String sessionId;
+
+  /// 当前设备客户端 ID，用于映射到对局玩家索引。
+  final String clientId;
+
+  /// 房间码，用于订阅房间事件。
+  final String roomCode;
+
+  /// 房间座位列表，用于 clientId → playerIndex 映射。
+  final List<OnlineRoomSeat> seats;
+
+  /// 根据 clientId 查找对应的座位索引（即对局玩家索引）。
+  int? get myPlayerIndex {
+    for (final seat in seats) {
+      if (seat.clientId == clientId) {
+        return seat.seatIndex;
+      }
+    }
+    return null;
+  }
 }
 
 /// 安全解析后端时间字段，缺失或格式异常时返回 null。

@@ -4,6 +4,7 @@ import {
   getOnlineRoomByCode,
   joinOnlineRoom,
   leaveOnlineRoom,
+  startOnlineGame,
 } from './service.js';
 import {
   subscribeOnlineRoom,
@@ -13,6 +14,7 @@ import type {
   CreateOnlineRoomInput,
   JoinOnlineRoomInput,
   LeaveOnlineRoomInput,
+  StartOnlineGameInput,
 } from './types.js';
 
 /** Converts any thrown value into a readable API error message. */
@@ -67,6 +69,19 @@ export async function registerOnlineRoutes(app: FastifyInstance): Promise<void> 
     }
   });
 
+  app.post('/api/online/rooms/:roomCode/start', async (request, reply) => {
+    try {
+      const params = request.params as { roomCode: string };
+      const body = request.body as { clientId: string };
+      return await startOnlineGame({
+        roomCode: params.roomCode,
+        clientId: body.clientId,
+      });
+    } catch (error) {
+      return reply.status(400).send(errorResponse(error));
+    }
+  });
+
   app.get('/api/online/rooms/:roomCode', async (request, reply) => {
     try {
       const params = request.params as { roomCode: string };
@@ -90,10 +105,8 @@ export async function registerOnlineRoutes(app: FastifyInstance): Promise<void> 
       socket.on('close', () => {
         unsubscribeOnlineRoom(room.id, socket);
         if (clientId) {
-          // Disconnect fallback: remove the seat and broadcast to others.
-          // Fire-and-forget; failures must not crash the close handler.
-          leaveOnlineRoom({ roomCode: params.roomCode, clientId }).catch((error) => {
-            app.log.warn({ err: error }, 'online room disconnect leave failed');
+          handleDisconnect(params.roomCode, clientId, app).catch((error) => {
+            app.log.warn({ err: error }, 'disconnect handler failed');
           });
         }
       });
@@ -102,4 +115,59 @@ export async function registerOnlineRoutes(app: FastifyInstance): Promise<void> 
       socket.close();
     }
   });
+}
+
+/**
+ * Handles player disconnect based on room status.
+ *
+ * - If room is 'waiting': delete the seat (existing leaveOnlineRoom behavior)
+ * - If room is 'playing': change seat controlType to 'local_bot' so the backend
+ *   drives that seat's turns going forward, then broadcast the takeover
+ */
+async function handleDisconnect(
+  roomCode: string,
+  clientId: string,
+  app: FastifyInstance,
+): Promise<void> {
+  const room = await getOnlineRoomByCode(roomCode);
+
+  if (room.status === 'waiting') {
+    // Room not started yet; delete the seat as before
+    await leaveOnlineRoom({ roomCode, clientId });
+    return;
+  }
+
+  if (room.status === 'playing') {
+    // Game in progress; take over with local bot instead of removing seat
+    const seat = room.seats.find((s) => s.clientId === clientId);
+    if (!seat) {
+      return; // Seat already gone or wrong clientId
+    }
+
+    const { prisma } = await import('../../db/prisma.js');
+    await prisma.onlineRoomSeat.update({
+      where: { id: seat.id },
+      data: { controlType: 'local_bot', connected: false },
+    });
+
+    const updatedRoom = await getOnlineRoomByCode(roomCode);
+    const { broadcastOnlineRoomEvent } = await import('./room-events.js');
+    broadcastOnlineRoomEvent(updatedRoom.id, {
+      type: 'room_updated',
+      room: updatedRoom,
+    });
+
+    // If it's now this bot's turn, drive it immediately
+    if (room.sessionId) {
+      const { broadcastGameState } = await import('./service.js');
+      const { getSplendorSession } = await import('../splendor/service.js');
+      const session = await getSplendorSession(room.sessionId);
+      const currentPlayer = session.state.players[session.state.currentPlayerIndex];
+      if (currentPlayer && currentPlayer.seatIndex === seat.seatIndex) {
+        // It's the disconnected player's turn; drive one bot action
+        const { driveBotsUntilHumanTurn } = await import('./service.js');
+        await driveBotsUntilHumanTurn(room.sessionId);
+      }
+    }
+  }
 }

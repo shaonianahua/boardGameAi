@@ -1,29 +1,42 @@
+import 'dart:async';
 import 'dart:developer' as developer;
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
+import '../../../../api/online_api.dart';
 import '../../../../api/splendor_api.dart';
 import '../../../../models/api_models.dart';
+import '../../../../models/online_room_models.dart';
 import '../../../../models/splendor_models.dart';
 import 'splendor_auto_player_controller.dart';
 
 /// 璀璨宝石桌面页控制器。
 ///
 /// 负责管理当前对局、catalog、刷新和后续行动提交所需的页面状态。
+/// 支持本地模式和在线模式两种初始化方式。
 class SplendorTableController extends GetxController {
   /// 创建桌面页控制器。
   SplendorTableController({
     SplendorApi? splendorApi,
+    OnlineApi? onlineApi,
     SplendorAutoPlayerController? autoPlayerController,
-  }) : _splendorApi = splendorApi ?? SplendorApi(),
-       autoPlayerController =
-           autoPlayerController ?? SplendorAutoPlayerController();
+  })  : _splendorApi = splendorApi ?? SplendorApi(),
+        _onlineApi = onlineApi ?? OnlineApi(),
+        autoPlayerController =
+            autoPlayerController ?? SplendorAutoPlayerController();
 
   final SplendorApi _splendorApi;
+  final OnlineApi _onlineApi;
 
   /// 自动玩家控制器，负责本地 Bot 与 AI 玩家自动行动。
   final SplendorAutoPlayerController autoPlayerController;
+
+  /// 在线模式参数，非空表示当前是在线对局。
+  OnlineGameParams? _onlineParams;
+
+  /// 在线房间事件订阅，用于接收 game_state_updated 事件。
+  StreamSubscription<OnlineRoomEvent>? _roomSubscription;
 
   /// 当前对局快照。
   final Rxn<SplendorSessionResponse> sessionResponse =
@@ -78,6 +91,65 @@ class SplendorTableController extends GetxController {
     _scheduleAutoPlayerAction();
   }
 
+  /// 初始化在线模式，按 sessionId 拉取对局并订阅房间事件。
+  Future<void> initializeOnlineMode(OnlineGameParams params) async {
+    _onlineParams = params;
+    loadCatalog();
+
+    // 按 sessionId 拉取对局快照
+    await refreshSession(sessionId: params.sessionId);
+
+    // 订阅房间事件，接收 game_state_updated
+    _roomSubscription?.cancel();
+    _roomSubscription = _onlineApi
+        .watchRoomEvents(params.roomCode, clientId: params.clientId)
+        .listen(
+          (event) {
+            if (event.isGameStateUpdated && event.state != null) {
+              _updateGameState(event.state!);
+            } else if (event.isGameFinished && event.state != null) {
+              _updateGameState(event.state!);
+            }
+          },
+          onError: (Object error) {
+            developer.log(
+              'online room event stream error',
+              error: error,
+              name: 'SplendorTableController',
+            );
+          },
+        );
+  }
+
+  /// 从 WebSocket 事件更新对局状态，不重新拉取完整快照。
+  void _updateGameState(Map<String, dynamic> stateJson) {
+    final current = sessionResponse.value;
+    if (current == null) return;
+
+    try {
+      final newState = SplendorGameState.fromJson(stateJson);
+      sessionResponse.value = SplendorSessionResponse(
+        session: current.session,
+        players: current.players,
+        state: newState,
+      );
+      // 状态更新后刷新合法行动
+      loadLegalActions();
+    } catch (error) {
+      developer.log(
+        'failed to parse game state from event',
+        error: error,
+        name: 'SplendorTableController',
+      );
+    }
+  }
+
+  /// 判断当前是否为在线模式。
+  bool get isOnlineMode => _onlineParams != null;
+
+  /// 在线模式下，当前设备对应的玩家索引。
+  int? get myPlayerIndex => _onlineParams?.myPlayerIndex;
+
   /// 重新拉取 catalog，用于展示真实卡面信息。
   Future<void> loadCatalog() async {
     isLoadingCatalog.value = true;
@@ -94,9 +166,10 @@ class SplendorTableController extends GetxController {
   }
 
   /// 从后端重新拉取当前对局快照。
-  Future<void> refreshSession() async {
-    final sessionId = sessionResponse.value?.session.id;
-    if (sessionId == null) {
+  Future<void> refreshSession({String? sessionId}) async {
+    final targetSessionId =
+        sessionId ?? sessionResponse.value?.session.id ?? _onlineParams?.sessionId;
+    if (targetSessionId == null) {
       _showMessage('没有找到当前对局');
       return;
     }
@@ -104,7 +177,7 @@ class SplendorTableController extends GetxController {
     isRefreshing.value = true;
 
     try {
-      sessionResponse.value = await _splendorApi.getSession(sessionId);
+      sessionResponse.value = await _splendorApi.getSession(targetSessionId);
       await loadLegalActions();
       await loadActionHistory();
       _scheduleAutoPlayerAction();
@@ -187,25 +260,31 @@ class SplendorTableController extends GetxController {
           actorType: 'human',
         ),
       );
-      sessionResponse.value = SplendorSessionResponse(
-        session: response.session,
-        players: session.players,
-        state: response.state,
-      );
-      _showAwardedNobleMessage(
-        playerBefore: beforePlayer,
-        playerAfter: response.state.players[playerIndex],
-      );
-      _showFinalRoundMessage(
-        beforeState: beforeState,
-        afterState: response.state,
-      );
-      _showGameFinishedMessage(
-        beforeState: beforeState,
-        afterState: response.state,
-      );
-      await loadLegalActions();
-      await loadActionHistory();
+
+      // 在线模式：后端会广播 game_state_updated，等 WS 事件更新状态
+      // 本地模式：立即更新状态并刷新
+      if (!isOnlineMode) {
+        sessionResponse.value = SplendorSessionResponse(
+          session: response.session,
+          players: session.players,
+          state: response.state,
+        );
+        _showAwardedNobleMessage(
+          playerBefore: beforePlayer,
+          playerAfter: response.state.players[playerIndex],
+        );
+        _showFinalRoundMessage(
+          beforeState: beforeState,
+          afterState: response.state,
+        );
+        _showGameFinishedMessage(
+          beforeState: beforeState,
+          afterState: response.state,
+        );
+        await loadLegalActions();
+        await loadActionHistory();
+      }
+
       return true;
     } on ApiException catch (error) {
       _showMessage(error.error.message);
@@ -222,6 +301,11 @@ class SplendorTableController extends GetxController {
   ///
   /// 自动玩家决策在后端完成，前端只负责刷新状态并继续检查连续自动玩家。
   void _scheduleAutoPlayerAction() {
+    // 在线模式：Bot/AI 由后端自动驱动，前端不执行自动玩家
+    if (isOnlineMode) {
+      return;
+    }
+
     if (_isAutoAdvancingPlayer) {
       return;
     }
@@ -636,14 +720,18 @@ class SplendorTableController extends GetxController {
 
   /// 在桌面页顶部展示轻量提示，避免遮挡底部行动区域。
   void _showMessage(String message) {
-    Get.snackbar(
-      '璀璨宝石',
-      message,
-      snackPosition: SnackPosition.TOP,
-      margin: const EdgeInsets.all(16),
-      borderRadius: 8,
-      duration: const Duration(seconds: 2),
-    );
+    // 延迟到下一帧再弹 snackbar，避免在路由切换/页面动画当前帧触发
+    // GetX snackbar 的 LateInitializationError（_animation 未初始化）。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Get.snackbar(
+        '璀璨宝石',
+        message,
+        snackPosition: SnackPosition.TOP,
+        margin: const EdgeInsets.all(16),
+        borderRadius: 8,
+        duration: const Duration(seconds: 2),
+      );
+    });
   }
 
   /// 对比行动提交前后的玩家贵族列表，提示本回合自动获得的贵族。
@@ -721,6 +809,13 @@ class SplendorTableController extends GetxController {
       return '玩家';
     }
     return state.players[playerIndex].name;
+  }
+
+  /// 控制器销毁时清理订阅。
+  @override
+  void onClose() {
+    _roomSubscription?.cancel();
+    super.onClose();
   }
 }
 

@@ -258,7 +258,8 @@ final room = await onlineApi.createRoom(
 
 - 在线房间接口路径必须先登记在 `ApiPaths`。
 - 页面和 Controller 不直接拼 URL。
-- 后续如果新增开始游戏、提交在线行动，应继续补在 `OnlineApi`，不要散到页面。
+- **V4 第二阶段新增**：`startGame(roomCode, clientId)` 调用开始游戏接口，后端会创建对局并广播 `game_started` 事件。
+- 后续如果新增其他在线房间操作，应继续补在 `OnlineApi`，不要散到页面。
 
 ### `frontend/lib/api/splendor_api.dart`
 
@@ -343,7 +344,8 @@ try {
 - `LeaveOnlineRoomInput`：离开房间请求体，对应 `POST /api/online/rooms/leave`；只含 `roomCode` 和 `clientId`，主动离开和断线兜底共用。
 - `OnlineRoomSeat`：在线房间座位公开信息。
 - `OnlineRoom`：在线房间公开快照，包含房间码、状态、座位列表等。
-- `OnlineRoomEvent`：WebSocket 房间事件，当前包含 `room_snapshot` 和 `room_updated` 两类。
+- `OnlineRoomEvent`：WebSocket 房间事件，**V4 第二阶段扩展**：新增 `game_started`、`game_state_updated`、`game_finished` 三类对局事件，携带 `sessionId` 和 `state` 字段。
+- **V4 第二阶段新增** `OnlineGameParams`：在线对局模式参数，包含 `sessionId`、`clientId`、`roomCode` 和 `seats`，用于对局页识别在线模式并订阅房间事件；提供 `myPlayerIndex` 计算当前设备对应的玩家索引。
 
 核心方法：
 
@@ -356,6 +358,10 @@ try {
 - `OnlineRoom.fromJson(...)`：解析房间快照。
 - `OnlineRoom.seatAt(int seatIndex)`：按座位号查找座位，用于房间页展示 0-3 号座位。
 - `OnlineRoomEvent.fromJson(...)`：解析 WebSocket 房间事件。
+- **V4 第二阶段新增** `OnlineRoomEvent.isGameStarted`：判断是否为开始游戏事件。
+- **V4 第二阶段新增** `OnlineRoomEvent.isGameStateUpdated`：判断是否为对局状态更新事件。
+- **V4 第二阶段新增** `OnlineRoomEvent.isGameFinished`：判断是否为对局结束事件。
+- **V4 第二阶段新增** `OnlineGameParams.myPlayerIndex`：根据 `clientId` 查找对应的座位索引（即对局玩家索引）。
 
 ### `frontend/lib/models/splendor_base_models.dart`
 
@@ -724,8 +730,10 @@ GetPage(
 - `joinRoom()`：读取房间码和玩家名称，调用 `OnlineApi.joinRoom`，成功后进入房间并订阅事件。
 - `refreshRoom()`：调用 `OnlineApi.getRoom` 手动刷新当前房间快照。
 - `leaveRoom()`：先同步切回创建/加入面板（保证按钮即时响应）并取消 WebSocket 订阅，再调用 `OnlineApi.leaveRoom` 通知后端删除当前设备座位并广播给其他玩家；后端通知失败不打断本地离开。
+- **V4 第二阶段新增** `startGame()`：房主调用 `OnlineApi.startGame` 开始游戏，后端会创建对局并广播 `game_started` 事件。
 - `_submitRoomRequest(...)`：统一处理创建/加入请求的 loading、错误提示和成功后订阅逻辑。
-- `_watchRoom(String roomCode)`：监听 `OnlineApi.watchRoomEvents`（带 clientId），收到事件后刷新 `room`。
+- `_watchRoom(String roomCode)`：监听 `OnlineApi.watchRoomEvents`（带 clientId），收到事件后刷新 `room`；**V4 第二阶段新增**：监听到 `game_started` 事件时调用 `_navigateToGame` 跳转到对局页。
+- **V4 第二阶段新增** `_navigateToGame(sessionId, roomCode, seats)`：构造 `OnlineGameParams` 并跳转到对局页（在线模式）。
 - `_loadClientId()`：从 `SharedPreferences` 读取或创建本机临时 clientId。
 - `_showMessage(String message)`：展示在线房间页的轻量提示。
 - `onClose()`：释放输入框和 WebSocket 订阅。
@@ -734,7 +742,7 @@ GetPage(
 
 - `_RoomIntroCard`：说明当前在线房间阶段边界。
 - `_EnterRoomPanel`：创建房间和加入房间表单。
-- `_RoomLobbyPanel`：已进入房间后的房间码、连接状态、座位列表和操作按钮。
+- `_RoomLobbyPanel`：已进入房间后的房间码、连接状态、座位列表和操作按钮；**V4 第二阶段新增**：房主在 `waiting` 状态下会显示"开始游戏"按钮，至少 2 人时可点击。
 - `_SeatTile`：单个座位展示，显示玩家名、控制类型、房主和在线状态。
 - `_ConnectionBadge`：实时连接状态标签。
 - `_SmallTag`：房主/在线等短标签。
@@ -742,9 +750,9 @@ GetPage(
 
 当前限制：
 
-- 不做开始在线游戏。
-- 不提交在线对局行动。
-- 不同步 `GameState`。
+- ~~不做开始在线游戏。~~（**V4 第二阶段已实现**：房主可开始游戏并自动跳转到对局页）
+- 不提交在线对局行动。（**V4 第二阶段已实现**：对局页支持在线模式，行动提交后后端自动广播）
+- 不同步 `GameState`。（**V4 第二阶段已实现**：对局页订阅 WS 事件实时更新状态）
 - 主动点「离开房间」和 WebSocket 断线都会删除当前设备座位并广播给其他玩家；离开者是房主时房主转移给剩余最小座位号，房间清空时置为 `closed`。
 
 ### `frontend/lib/pages/splendor/splendor_create_session_page.dart`
@@ -993,33 +1001,40 @@ await CardActionsSheet.show(
 - `isLoadingAiAdvice`：AI 建议请求状态。
 - `aiAdvice`：最近一次 AI 建议响应，供底部策略面板展示。
 - `aiAdviceStreamLines`：AI 流式建议逐段文本，供底部策略面板展示实时分析过程。
+- **V4 第二阶段新增** `_onlineParams`：在线模式参数（`OnlineGameParams?`），非空表示当前是在线对局。
+- **V4 第二阶段新增** `_roomSubscription`：在线房间 WebSocket 订阅，用于接收 `game_state_updated` 和 `game_finished` 事件。
+- **V4 第二阶段新增** `isOnlineMode`：判断当前是否为在线模式。
+- **V4 第二阶段新增** `myPlayerIndex`：在线模式下当前设备对应的玩家索引。
 
 核心方法：
 
-- `initialize(SplendorSessionResponse? initialSessionResponse)`：接收进入桌面页时的初始对局。
+- `initialize(SplendorSessionResponse? initialSessionResponse)`：接收进入桌面页时的初始对局（本地模式）。
+- **V4 第二阶段新增** `initializeOnlineMode(OnlineGameParams params)`：初始化在线模式，按 `sessionId` 拉取对局并订阅房间事件；订阅到 `game_state_updated` / `game_finished` 事件时调用 `_updateGameState` 更新状态。
+- **V4 第二阶段新增** `_updateGameState(Map<String, dynamic> stateJson)`：从 WebSocket 事件更新对局状态，不重新拉取完整快照；更新后自动刷新合法行动。
 - `loadCatalog()`：拉取 catalog。
 - `refreshSession()`：拉取当前对局快照。
 - `loadLegalActions()`：拉取当前合法行动。
 - `loadActionHistory()`：拉取当前对局行动历史。
-- `submitLegalAction(SplendorLegalAction legalAction)`：提交后端返回的合法行动；普通行动成功后只刷新状态和历史，不再弹出每步成功提示。
+- `submitLegalAction(SplendorLegalAction legalAction)`：提交后端返回的合法行动；**V4 第二阶段更新**：在线模式下提交后不立即更新状态，改为等 WebSocket 事件（后端自动广播）；本地模式保持原逻辑。
 - `_submitLegalAction(SplendorLegalAction legalAction)`：内部提交方法，返回是否成功；AI 推荐执行需要根据结果清空旧建议。
 - `actCurrentAutoPlayer()`：调用 `SplendorAutoPlayerController` 执行当前本地 Bot 或 AI 玩家，并把返回状态写回桌面。
 - `requestAiAdvice()`：为当前真人玩家请求 AI 建议；优先走流式接口，失败时回退非流式接口，只更新建议展示状态。
 - `executeAiRecommendedAction()`：执行当前 AI 建议中的推荐行动；提交前会确认推荐行动仍存在于当前合法行动列表，成功后清空 `aiAdvice` 和 `aiAdviceStreamLines`，避免继续展示过期建议。
 - `_findMatchingLegalAction(SplendorLegalAction recommendedAction)`：在当前合法行动列表中查找与 AI 推荐行动 payload 完全一致的行动。
 - `_isSameActionPayload(Object? left, Object? right)`：深度比较两个行动 payload，支持嵌套 Map/List，用于避免执行已经过期或不合法的推荐行动。
-- `_requestAiAdviceStreamWithRetry(String sessionId)`：AI 流式请求网络中断时保留已输出文本并自动重试，重连后明确提示“以下为重新生成内容”；默认最多重试 3 次。
+- `_requestAiAdviceStreamWithRetry(String sessionId)`：AI 流式请求网络中断时保留已输出文本并自动重试，重连后明确提示”以下为重新生成内容”；默认最多重试 3 次。
 - `_consumeAiAdviceStream(String sessionId)`：消费一次 AI SSE 流，把 `delta` 文本和 `result` 结构化建议分别写入页面状态。
 - `_aiAdviceRetryDelay(int attempt)`：AI 流式自动重试的指数退避间隔，当前依次为 1、2、4 秒。
 - `_requestAiAdviceFallback(String sessionId)`：AI 流式接口失败后的非流式兜底请求，保证建议功能不中断。
 - `_isNetworkInterrupted(ApiException error)`：识别 AI 流式请求中的网络中断、读取失败、取消和证书异常；这类错误不再继续 fallback，而是在面板中提示用户重试或自动重连。
 - `_appendAiAdviceStreamText(String text, { required bool appendToLastLine })`：把流式文本追加到实时分析展示区；模型 delta 默认合并到上一行，避免一个字一个字变成多行。
 - `_AiAdviceStreamDisplayFilter`：过滤模型原生流中的 `<FINAL_JSON>`、半截 `<FINAL_JSON`、JSON 片段和 markdown 标识，只把自然语言分析交给 UI 展示。
-- `_scheduleAutoPlayerAction()`：当前玩家是本地 Bot 或 AI 玩家时延迟触发自动行动；连续自动玩家会在成功行动后继续推进。
+- `_scheduleAutoPlayerAction()`：当前玩家是本地 Bot 或 AI 玩家时延迟触发自动行动；**V4 第二阶段更新**：在线模式下禁用（Bot/AI 由后端自动驱动）；连续自动玩家会在成功行动后继续推进。
 - `_showAwardedNobleMessage(...)`：提交行动后对比玩家前后贵族列表，如果本回合自动获得贵族，则显示关键提示。
 - `_nobleById(String nobleId)`：从已加载 catalog 中查找贵族，仅用于获得贵族提示文案。
 - `_isHeuristicFallback(SplendorAiAdviceResponse response)`：根据建议理由判断本次是否是模型失败后的本地启发式 fallback，仅用于前端日志。
 - `_showMessage(String message)`：桌面页轻量提示统一显示在顶部；只用于错误、AI 执行成功、贵族获得、终局等关键事件，不再用于真人或 Bot 的普通行动成功提示。
+- **V4 第二阶段新增** `onClose()`：控制器销毁时清理 WebSocket 订阅。
 
 用法：
 
@@ -1035,6 +1050,9 @@ controller.initialize(sessionResponse);
 - 行动历史以后端 `game_actions` 为准；自动贵族事件由后端记录为 `noble_visit`，前端只负责翻译展示。
 - 贵族获得由后端在回合收尾自动结算；前端只根据提交行动前后的 `player.nobles` 差异提示结果，不提供手动选择贵族入口。
 - Bot 决策由后端 `bot-advisor.ts` 负责，前端 controller 只做自动触发和状态刷新，不在前端复刻策略。
+- **V4 第二阶段新增**：在线模式下 Bot/AI 由后端自动驱动，前端不执行 `_scheduleAutoPlayerAction`。
+- **V4 第二阶段新增**：在线模式下提交行动后不立即更新状态，改为等 WebSocket `game_state_updated` 事件（后端自动广播）。
+- **V4 第二阶段新增**：页面通过 `_isNotMyTurn` 判断在线模式下是否非己回合，非己回合时禁用合法行动面板和卡片操作。
 - AI 建议接口由 `SplendorApi.requestAiAdvice` / `requestAiAdviceStream` 统一封装，页面和 controller 不直接拼路径。
 - AI 建议请求开始、成功和失败都会在 Flutter 日志中以 `splendor.ai` / `splendor.api` 分类输出，方便真机调试模型是否真实返回。
 - 弃宝石、AI 建议多步编排或本地规则服务等复杂流程出现后，优先抽到 `services/splendor/`。

@@ -30,6 +30,17 @@ export interface LeaveOnlineRoomInput {
   clientId: string;
 }
 
+/**
+ * Request body for starting an online game.
+ *
+ * Caller must be the room host; creates a game session, maps seats to players,
+ * and broadcasts the game_started event.
+ */
+export interface StartOnlineGameInput {
+  roomCode: string;
+  clientId: string;
+}
+
 /** Public seat shape returned to clients and broadcast over room events. */
 export interface PublicOnlineRoomSeat {
   id: string;
@@ -66,4 +77,20 @@ export type OnlineRoomEvent =
   | {
       type: 'room_updated';
       room: PublicOnlineRoom;
+    }
+  | {
+      type: 'game_started';
+      room: PublicOnlineRoom;
+      sessionId: string;
+      state: unknown;
+    }
+  | {
+      type: 'game_state_updated';
+      room: PublicOnlineRoom;
+      state: unknown;
+    }
+  | {
+      type: 'game_finished';
+      room: PublicOnlineRoom;
+      state: unknown;
     };

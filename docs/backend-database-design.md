@@ -625,6 +625,29 @@ POST /api/online/rooms/leave
 - 房间所有座位删空时，房间 `status` 置为 `closed`，已 closed 的房间无法再加入。
 - 座位已不存在时幂等返回当前快照，不重复广播。
 
+### 开始游戏
+
+```text
+POST /api/online/rooms/:roomCode/start
+```
+
+请求：
+
+```json
+{
+  "clientId": "host-client-id"
+}
+```
+
+说明：
+
+- 仅房主可调用（校验 `clientId` 对应房主座位）。
+- 房间必须 `status === 'waiting'` 且座位 ≥2。
+- 座位按 `seatIndex` 升序映射成对局玩家（`controlType` → `type`/`botLevel`：human→human、local_bot→bot+local、ai_player→bot+ai）。
+- 创建 `game_sessions` 和 `game_players`，房间 `status` 置 `playing`、写入 `sessionId`。
+- 广播 `game_started` 事件（带 `sessionId` 和初始 `state`）。
+- 若首位玩家是 Bot/AI，后端自动驱动其回合直到轮到真人，每个 Bot 行动后广播 `game_state_updated`。
+
 ### 订阅房间事件
 
 ```text
@@ -649,11 +672,43 @@ WebSocket /api/online/rooms/:roomCode/events
 }
 ```
 
+房主开始游戏后，服务端广播：
+
+```json
+{
+  "type": "game_started",
+  "room": {},
+  "sessionId": "...",
+  "state": {}
+}
+```
+
+对局中有玩家提交行动后，服务端广播：
+
+```json
+{
+  "type": "game_state_updated",
+  "room": {},
+  "state": {}
+}
+```
+
+对局结束时，服务端广播：
+
+```json
+{
+  "type": "game_finished",
+  "room": {},
+  "state": {}
+}
+```
+
 说明：
 
-- 当前事件只同步房间大厅状态。
-- socket 断开（关 App、断网、切走页面）时，若连接带了 `clientId`，后端会先取消订阅，再用该 `clientId` 删除座位并广播，作为离开兜底。
-- 开始游戏、行动提交和 GameState 广播放到下一阶段设计。
+- socket 断开（关 App、断网、切走页面）时，若连接带了 `clientId`：
+  - 房间 `waiting` 阶段：后端先取消订阅，再用该 `clientId` 删除座位并广播，作为离开兜底。
+  - 房间 `playing` 阶段：后端把该座位 `controlType` 改为 `local_bot`，后续该座位回合由后端自动驱动，对局不中断。
+- 对局中真人行动走现有 `POST /api/splendor/sessions/:id/actions`，后端执行后自动向房间广播 `game_state_updated`；Bot/AI 回合由后端自动驱动并广播。
 
 ## Prisma 初步模型
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:get/get.dart';
 
+import '../../models/online_room_models.dart';
 import '../../models/splendor_models.dart';
 import 'table/actions/card_actions_sheet.dart';
 import 'table/actions/legal_actions_panel.dart';
@@ -34,11 +35,16 @@ class _SplendorTablePageState extends State<SplendorTablePage> {
   void initState() {
     super.initState();
     controller = Get.put(SplendorTableController());
-    controller.initialize(
-      Get.arguments is SplendorSessionResponse
-          ? Get.arguments as SplendorSessionResponse
-          : null,
-    );
+
+    // 兼容本地模式和在线模式两种参数
+    final args = Get.arguments;
+    if (args is OnlineGameParams) {
+      controller.initializeOnlineMode(args);
+    } else if (args is SplendorSessionResponse) {
+      controller.initialize(args);
+    } else {
+      controller.initialize(null);
+    }
   }
 
   @override
@@ -170,20 +176,26 @@ class _SplendorTablePageState extends State<SplendorTablePage> {
                         response.state.status == SplendorSessionStatus.finished)
                       SizedBox(height: 8.h),
                     SplendorPlayerSummaryCard(
-                      player: response
-                          .state
-                          .players[response.state.currentPlayerIndex],
-                      isCurrent: true,
+                      player: response.state.players[
+                          controller.isOnlineMode
+                              ? (controller.myPlayerIndex ?? 0)
+                              : response.state.currentPlayerIndex],
+                      isCurrent: !controller.isOnlineMode ||
+                          controller.myPlayerIndex ==
+                              response.state.currentPlayerIndex,
                       cardsById: lookup.cardsById,
                       onReservedCardSelected: _showReservedCardActions,
                     ),
                     SizedBox(height: 8.h),
                     LegalActionsPanel(
                       legalActions: legalActions,
-                      currentPlayer: response.state.players[actingPlayerIndex],
-                      isSubmitting:
-                          controller.isSubmittingAction.value ||
-                          isAutoPlayerActing,
+                      currentPlayer: response.state.players[
+                          controller.isOnlineMode
+                              ? (controller.myPlayerIndex ?? 0)
+                              : actingPlayerIndex],
+                      isSubmitting: controller.isSubmittingAction.value ||
+                          isAutoPlayerActing ||
+                          _isNotMyTurn(controller, actingPlayerIndex),
                       isActingAutoPlayer: isAutoPlayerActing,
                       isLoading: controller.isLoadingLegalActions.value,
                       onSubmit: controller.submitLegalAction,
@@ -196,22 +208,30 @@ class _SplendorTablePageState extends State<SplendorTablePage> {
   }
 
   Future<void> _showCardActions(SplendorCard card) {
+    final response = controller.sessionResponse.value;
+    final isDisabled = response != null &&
+        _isNotMyTurn(controller, response.state.currentPlayerIndex);
+
     return CardActionsSheet.show(
       context: context,
       card: card,
       actions: controller.legalActions.value?.actions ?? const [],
-      isSubmitting: controller.isSubmittingAction.value,
+      isSubmitting: controller.isSubmittingAction.value || isDisabled,
       onSubmit: controller.submitLegalAction,
     );
   }
 
   Future<void> _showReservedCardActions(SplendorCard card) {
+    final response = controller.sessionResponse.value;
+    final isDisabled = response != null &&
+        _isNotMyTurn(controller, response.state.currentPlayerIndex);
+
     return CardActionsSheet.show(
       context: context,
       card: card,
       source: 'reserved',
       actions: controller.legalActions.value?.actions ?? const [],
-      isSubmitting: controller.isSubmittingAction.value,
+      isSubmitting: controller.isSubmittingAction.value || isDisabled,
       onSubmit: controller.submitLegalAction,
     );
   }
@@ -333,6 +353,18 @@ class _SplendorTablePageState extends State<SplendorTablePage> {
         );
       },
     );
+  }
+
+  /// 在线模式下判断是否非己回合（需要禁用操作）。
+  bool _isNotMyTurn(SplendorTableController controller, int actingPlayerIndex) {
+    if (!controller.isOnlineMode) {
+      return false; // 本地模式不限制
+    }
+    final myIndex = controller.myPlayerIndex;
+    if (myIndex == null) {
+      return true; // 找不到自己的索引，禁用操作
+    }
+    return actingPlayerIndex != myIndex; // 不是自己回合时禁用
   }
 }
 

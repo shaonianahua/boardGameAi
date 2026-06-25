@@ -187,9 +187,18 @@ class OnlineRoomController extends GetxController {
         .listen(
           (event) {
             room.value = event.room;
-            statusMessage.value = event.type == 'room_snapshot'
-                ? '已连接房间实时更新'
-                : '房间座位已更新';
+
+            // 房间座位更新提示
+            if (event.type == 'room_snapshot') {
+              statusMessage.value = '已连接房间实时更新';
+            } else if (event.type == 'room_updated') {
+              statusMessage.value = '房间座位已更新';
+            }
+
+            // 收到开始游戏事件，跳转到对局页
+            if (event.isGameStarted && event.sessionId != null) {
+              _navigateToGame(event.sessionId!, roomCode, event.room.seats);
+            }
           },
           onError: (Object error) {
             isWatching.value = false;
@@ -221,14 +230,73 @@ class OnlineRoomController extends GetxController {
   /// 展示在线房间页的轻量提示，主要用于表单校验和接口错误。
   void _showMessage(String message) {
     statusMessage.value = message;
-    Get.snackbar(
-      '在线房间',
-      message,
-      snackPosition: SnackPosition.BOTTOM,
-      margin: const EdgeInsets.all(16),
-      borderRadius: 8,
-      duration: const Duration(seconds: 2),
+    // 延迟到下一帧再弹 snackbar，避免在路由切换/页面动画当前帧触发
+    // GetX snackbar 的 LateInitializationError（_animation 未初始化）。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Get.snackbar(
+        '在线房间',
+        message,
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(16),
+        borderRadius: 8,
+        duration: const Duration(seconds: 2),
+      );
+    });
+  }
+
+  /// 房主调用开始游戏接口，后端会创建对局并广播 game_started 事件。
+  Future<void> startGame() async {
+    final currentRoom = room.value;
+    if (currentRoom == null) {
+      _showMessage('当前未在房间中');
+      return;
+    }
+
+    if (isSubmitting.value) {
+      return; // 防重复点击
+    }
+
+    isSubmitting.value = true;
+    statusMessage.value = '正在开始游戏...';
+
+    try {
+      await _onlineApi.startGame(currentRoom.roomCode, clientId.value);
+      statusMessage.value = '游戏即将开始';
+      // 收到 game_started 事件后会自动跳转
+    } on ApiException catch (error) {
+      _showMessage(error.error.message);
+    } catch (_) {
+      _showMessage('开始游戏失败，请稍后重试');
+    } finally {
+      isSubmitting.value = false;
+    }
+  }
+
+  /// 收到 game_started 事件后跳转到对局页（在线模式）。
+  ///
+  /// 跳转放到下一帧执行，避免在 WebSocket 事件回调当前帧里直接切路由，
+  /// 与正在进行的页面动画或 snackbar 动画冲突（LateInitializationError）。
+  bool _hasNavigatedToGame = false;
+
+  void _navigateToGame(
+    String sessionId,
+    String roomCode,
+    List<OnlineRoomSeat> seats,
+  ) {
+    if (_hasNavigatedToGame) {
+      return; // 防止重复跳转（多次 game_started 或事件重发）
+    }
+    _hasNavigatedToGame = true;
+
+    final params = OnlineGameParams(
+      sessionId: sessionId,
+      clientId: clientId.value,
+      roomCode: roomCode,
+      seats: seats,
     );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Get.toNamed('/splendor/table', arguments: params);
+    });
   }
 
   /// 页面销毁时释放输入框和实时订阅。
