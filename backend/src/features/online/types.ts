@@ -19,6 +19,17 @@ export interface JoinOnlineRoomInput {
   controlType?: OnlineSeatControlType;
 }
 
+/**
+ * Request body for leaving an online room.
+ *
+ * `clientId` identifies which seat to remove; used by both the explicit
+ * leave API and the WebSocket disconnect fallback.
+ */
+export interface LeaveOnlineRoomInput {
+  roomCode: string;
+  clientId: string;
+}
+
 /** Public seat shape returned to clients and broadcast over room events. */
 export interface PublicOnlineRoomSeat {
   id: string;

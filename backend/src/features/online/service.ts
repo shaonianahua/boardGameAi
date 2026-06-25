@@ -5,6 +5,7 @@ import { broadcastOnlineRoomEvent } from './room-events.js';
 import type {
   CreateOnlineRoomInput,
   JoinOnlineRoomInput,
+  LeaveOnlineRoomInput,
   OnlineSeatControlType,
   PublicOnlineRoom,
   PublicOnlineRoomSeat,
@@ -124,7 +125,62 @@ export async function joinOnlineRoom(input: JoinOnlineRoomInput): Promise<Public
   return snapshot;
 }
 
-/** Converts a Prisma room with seats into the public API shape. */
+/**
+ * Removes a player's seat from a room and notifies remaining players.
+ *
+ * Handles both explicit "leave room" taps and WebSocket disconnect fallbacks.
+ * Rules confirmed for the lobby MVP:
+ * - The leaving seat is deleted so the seat index is freed for others.
+ * - If the leaving seat was the host seat, host is transferred to the
+ *   smallest remaining seat index; the room keeps running.
+ * - If no seat remains, the room is marked `closed` (a closed room can no
+ *   longer be joined because `join` requires `status === 'waiting'`).
+ * - Idempotent: when the seat is already gone (e.g. REST leave then WS close),
+ *   the current snapshot is returned without re-broadcasting.
+ */
+export async function leaveOnlineRoom(input: LeaveOnlineRoomInput): Promise<PublicOnlineRoom> {
+  const normalizedRoomCode = normalizeRoomCode(input.roomCode);
+  const clientId = input.clientId.trim();
+  if (!clientId) {
+    throw new Error('clientId is required');
+  }
+
+  const room = await findRoomByCode(normalizedRoomCode);
+  const leavingSeat = room.seats.find((seat) => seat.clientId === clientId);
+  if (!leavingSeat) {
+    // Seat already removed by a previous leave/disconnect; stay idempotent.
+    return publicRoom(room);
+  }
+
+  await prisma.onlineRoomSeat.delete({ where: { id: leavingSeat.id } });
+
+  const remainingSeats = room.seats.filter((seat) => seat.id !== leavingSeat.id);
+
+  // No one left: close the room. No subscribers remain, so no broadcast.
+  if (remainingSeats.length === 0) {
+    const closedRoom = await prisma.onlineRoom.update({
+      where: { id: room.id },
+      data: { status: 'closed' },
+      include: { seats: { orderBy: { seatIndex: 'asc' } } },
+    });
+    return publicRoom(closedRoom);
+  }
+
+  // Transfer host to the smallest remaining seat index when the host left.
+  const nextHostSeatIndex =
+    room.hostSeatIndex === leavingSeat.seatIndex
+      ? Math.min(...remainingSeats.map((seat) => seat.seatIndex))
+      : room.hostSeatIndex;
+
+  const updatedRoom = await prisma.onlineRoom.update({
+    where: { id: room.id },
+    data: { hostSeatIndex: nextHostSeatIndex },
+    include: { seats: { orderBy: { seatIndex: 'asc' } } },
+  });
+  const snapshot = publicRoom(updatedRoom);
+  broadcastOnlineRoomEvent(room.id, { type: 'room_updated', room: snapshot });
+  return snapshot;
+}
 export function publicRoom(room: OnlineRoomWithSeats): PublicOnlineRoom {
   return {
     id: room.id,

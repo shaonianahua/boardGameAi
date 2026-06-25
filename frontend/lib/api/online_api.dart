@@ -55,11 +55,34 @@ class OnlineApi {
     return OnlineRoom.fromJson(_data(response));
   }
 
+  /// 调用 `POST /api/online/rooms/leave` 删除当前设备座位并通知房间内其他玩家。
+  ///
+  /// 后端会按 `clientId` 删除座位；若离开者是房主则把房主转移给剩余最小座位号，
+  /// 房间清空时置为 closed。返回最新房间快照（座位为空时为 closed 快照）。
+  Future<OnlineRoom> leaveRoom(LeaveOnlineRoomInput input) async {
+    final response = await _request(
+      () => _apiClient.post<Map<String, dynamic>>(
+        ApiPaths.onlineRoomsLeave,
+        data: input.toJson(),
+      ),
+    );
+    return OnlineRoom.fromJson(_data(response));
+  }
+
   /// 连接 `WebSocket /api/online/rooms/:roomCode/events` 并持续返回房间事件。
   ///
   /// 后端连接成功后会先返回 `room_snapshot`，房间座位变化时返回 `room_updated`。
-  Stream<OnlineRoomEvent> watchRoomEvents(String roomCode) async* {
-    final socketUrl = _webSocketUrl(ApiPaths.onlineRoomEvents(roomCode));
+  /// 传入 `clientId` 时会作为查询参数带上，后端在 socket 断开时据此删除对应座位。
+  Stream<OnlineRoomEvent> watchRoomEvents(
+    String roomCode, {
+    String? clientId,
+  }) async* {
+    final socketUrl = _webSocketUrl(
+      ApiPaths.onlineRoomEvents(roomCode),
+      queryParameters: clientId != null && clientId.isNotEmpty
+          ? {'clientId': clientId}
+          : null,
+    );
     WebSocket? socket;
 
     try {
@@ -148,10 +171,18 @@ class OnlineApi {
   }
 
   /// 根据 HTTP baseUrl 和 path 生成 WebSocket URL。
-  String _webSocketUrl(String path) {
+  ///
+  /// `queryParameters` 用于在事件连接上携带 `clientId` 等参数。
+  String _webSocketUrl(String path, {Map<String, String>? queryParameters}) {
     final baseUri = Uri.parse(_baseUrl);
     final scheme = baseUri.scheme == 'https' ? 'wss' : 'ws';
     final normalizedPath = path.startsWith('/') ? path : '/$path';
-    return baseUri.replace(scheme: scheme, path: normalizedPath).toString();
+    return baseUri
+        .replace(
+          scheme: scheme,
+          path: normalizedPath,
+          queryParameters: queryParameters,
+        )
+        .toString();
   }
 }

@@ -148,7 +148,7 @@ services/
 文件职责：
 
 - `types.ts`：在线房间的请求体、公开返回结构和 WebSocket 事件类型。接口字段必须和数据库字段、前端模型保持一致，不随意扩展。
-- `service.ts`：在线房间业务逻辑。负责生成房间码、创建房间、加入房间、重复 clientId 找回座位、转换公开房间快照。
+- `service.ts`：在线房间业务逻辑。负责生成房间码、创建房间、加入房间、重复 clientId 找回座位、离开房间删座位与房主转移、转换公开房间快照。
 - `room-events.ts`：房间 WebSocket 订阅管理。当前使用内存 `Map<roomId, Set<WebSocket>>` 保存订阅者，并负责广播房间更新事件。
 - `routes.ts`：在线房间接口入口。注册 REST 接口和 WebSocket 订阅入口，把异常转换为统一错误返回。
 
@@ -156,6 +156,7 @@ services/
 
 - `createOnlineRoom(input)`：创建等待中的联机房间，并把创建者放到 0 号座位。
 - `joinOnlineRoom(input)`：加入等待中的房间；如果同一 `clientId` 已在房间中，则更新原座位而不是新增座位。
+- `leaveOnlineRoom(input)`：按 `clientId` 删除座位并广播 `room_updated`；离开者是房主时把房主转移给剩余最小座位号，房间清空时置为 `closed`；座位已不存在时幂等返回不广播，兼容主动离开后 WebSocket 断线再触发一次。
 - `getOnlineRoomByCode(roomCode)`：按房间码读取公开房间快照。
 - `subscribeOnlineRoom(roomId, socket)`：把 WebSocket 连接加入指定房间订阅集合。
 - `unsubscribeOnlineRoom(roomId, socket)`：连接关闭时移除订阅关系。
@@ -165,8 +166,9 @@ services/
 
 - `POST /api/online/rooms`：创建房间。
 - `POST /api/online/rooms/join`：加入房间。
+- `POST /api/online/rooms/leave`：离开房间，删除当前设备座位并广播给其他玩家。
 - `GET /api/online/rooms/:roomCode`：查询房间。
-- `WebSocket /api/online/rooms/:roomCode/events`：订阅房间快照和更新事件。
+- `WebSocket /api/online/rooms/:roomCode/events`：订阅房间快照和更新事件；连接可带 `clientId` 查询参数，socket 断开时后端据此删除对应座位作为离开兜底。
 
 暂不包含：
 

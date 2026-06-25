@@ -98,6 +98,22 @@ class JoinOnlineRoomInput {
   }
 }
 
+/// 离开在线房间请求体，对应 `POST /api/online/rooms/leave`。
+///
+/// `clientId` 用于后端定位并删除当前设备座位；主动离开和断线兜底都复用此请求。
+class LeaveOnlineRoomInput {
+  /// 构造离开房间请求。
+  const LeaveOnlineRoomInput({required this.roomCode, required this.clientId});
+
+  final String roomCode;
+  final String clientId;
+
+  /// 转成后端离开房间接口需要的 JSON。
+  OnlineJsonMap toJson() {
+    return {'roomCode': roomCode, 'clientId': clientId};
+  }
+}
+
 /// 在线房间座位公开信息，由 REST 接口和 WebSocket 事件共同返回。
 class OnlineRoomSeat {
   /// 构造一个在线房间座位快照。

@@ -206,6 +206,7 @@ final apiClient = ApiClient(baseUrl: ApiConfig.defaultBaseUrl);
 - `splendorAiStream(String sessionId)`：V2 AI 流式建议路径，对应 `POST /api/splendor/sessions/:sessionId/ai/stream`。
 - `onlineRooms`：在线房间创建路径，对应 `POST /api/online/rooms`。
 - `onlineRoomsJoin`：在线房间加入路径，对应 `POST /api/online/rooms/join`。
+- `onlineRoomsLeave`：在线房间离开路径，对应 `POST /api/online/rooms/leave`；删除当前设备座位并通知房间内其他玩家。
 - `onlineRoom(String roomCode)`：在线房间查询路径，对应 `GET /api/online/rooms/:roomCode`。
 - `onlineRoomEvents(String roomCode)`：在线房间 WebSocket 事件路径，对应 `/api/online/rooms/:roomCode/events`。
 
@@ -236,12 +237,13 @@ final path = ApiPaths.splendorActions(sessionId);
 
 - `createRoom(CreateOnlineRoomInput input)`：调用 `POST /api/online/rooms` 创建房间，返回 `OnlineRoom` 快照。
 - `joinRoom(JoinOnlineRoomInput input)`：调用 `POST /api/online/rooms/join` 加入房间，返回 `OnlineRoom` 快照。
+- `leaveRoom(LeaveOnlineRoomInput input)`：调用 `POST /api/online/rooms/leave` 删除当前设备座位，返回最新房间快照；后端按 clientId 删座位，离开者是房主时转移房主，房间清空时置为 closed。
 - `getRoom(String roomCode)`：调用 `GET /api/online/rooms/:roomCode` 查询房间快照。
-- `watchRoomEvents(String roomCode)`：连接 `WebSocket /api/online/rooms/:roomCode/events`，持续返回 `OnlineRoomEvent`。收到后端标准错误时转成 `ApiException`。
+- `watchRoomEvents(String roomCode, {String? clientId})`：连接 `WebSocket /api/online/rooms/:roomCode/events`，持续返回 `OnlineRoomEvent`。传入 `clientId` 时作为查询参数带上，后端在 socket 断开时据此删除对应座位（断线兜底）。收到后端标准错误时转成 `ApiException`。
 - `_request(...)`：包装 Dio 请求，把后端 `{ error }` 响应转成 `ApiException`。
 - `_data(...)`：提取 REST 响应体，并处理标准错误体。
 - `_errorFromData(...)`：从响应体里提取后端错误对象。
-- `_webSocketUrl(String path)`：根据 `ApiConfig.defaultBaseUrl` 把 HTTP path 转成 WebSocket URL。
+- `_webSocketUrl(String path)`：根据 `ApiConfig.defaultBaseUrl` 把 HTTP path 转成 WebSocket URL；支持 `queryParameters` 在事件连接上携带 `clientId`。
 
 用法：
 
@@ -338,6 +340,7 @@ try {
 - `OnlineSeatControlType`：座位控制类型，包含 `human` / `local_bot` / `ai_player`。
 - `CreateOnlineRoomInput`：创建房间请求体，对应 `POST /api/online/rooms`。
 - `JoinOnlineRoomInput`：加入房间请求体，对应 `POST /api/online/rooms/join`。
+- `LeaveOnlineRoomInput`：离开房间请求体，对应 `POST /api/online/rooms/leave`；只含 `roomCode` 和 `clientId`，主动离开和断线兜底共用。
 - `OnlineRoomSeat`：在线房间座位公开信息。
 - `OnlineRoom`：在线房间公开快照，包含房间码、状态、座位列表等。
 - `OnlineRoomEvent`：WebSocket 房间事件，当前包含 `room_snapshot` 和 `room_updated` 两类。
@@ -348,6 +351,7 @@ try {
 - `OnlineSeatControlType.fromJson(String? value)`：解析后端座位控制类型。
 - `CreateOnlineRoomInput.toJson()`：生成创建房间请求体。
 - `JoinOnlineRoomInput.toJson()`：生成加入房间请求体。
+- `LeaveOnlineRoomInput.toJson()`：生成离开房间请求体。
 - `OnlineRoomSeat.fromJson(...)`：解析座位快照。
 - `OnlineRoom.fromJson(...)`：解析房间快照。
 - `OnlineRoom.seatAt(int seatIndex)`：按座位号查找座位，用于房间页展示 0-3 号座位。
@@ -719,9 +723,9 @@ GetPage(
 - `createRoom()`：读取房主名称，调用 `OnlineApi.createRoom`，成功后进入房间并订阅事件。
 - `joinRoom()`：读取房间码和玩家名称，调用 `OnlineApi.joinRoom`，成功后进入房间并订阅事件。
 - `refreshRoom()`：调用 `OnlineApi.getRoom` 手动刷新当前房间快照。
-- `leaveRoom()`：取消 WebSocket 订阅并清空当前房间页面状态，不删除后端房间。
+- `leaveRoom()`：先同步切回创建/加入面板（保证按钮即时响应）并取消 WebSocket 订阅，再调用 `OnlineApi.leaveRoom` 通知后端删除当前设备座位并广播给其他玩家；后端通知失败不打断本地离开。
 - `_submitRoomRequest(...)`：统一处理创建/加入请求的 loading、错误提示和成功后订阅逻辑。
-- `_watchRoom(String roomCode)`：监听 `OnlineApi.watchRoomEvents`，收到事件后刷新 `room`。
+- `_watchRoom(String roomCode)`：监听 `OnlineApi.watchRoomEvents`（带 clientId），收到事件后刷新 `room`。
 - `_loadClientId()`：从 `SharedPreferences` 读取或创建本机临时 clientId。
 - `_showMessage(String message)`：展示在线房间页的轻量提示。
 - `onClose()`：释放输入框和 WebSocket 订阅。
@@ -741,7 +745,7 @@ GetPage(
 - 不做开始在线游戏。
 - 不提交在线对局行动。
 - 不同步 `GameState`。
-- 不做离开房间的后端座位释放。
+- 主动点「离开房间」和 WebSocket 断线都会删除当前设备座位并广播给其他玩家；离开者是房主时房主转移给剩余最小座位号，房间清空时置为 `closed`。
 
 ### `frontend/lib/pages/splendor/splendor_create_session_page.dart`
 

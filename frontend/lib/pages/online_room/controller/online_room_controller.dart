@@ -115,13 +115,44 @@ class OnlineRoomController extends GetxController {
     }
   }
 
-  /// 离开当前房间页面状态，关闭 WebSocket 订阅但不删除后端房间。
+  /// 离开当前房间：先同步切回页面，再通知后端删除座位并广播给其他玩家。
+  ///
+  /// 执行顺序很关键：先清空本地状态保证按钮即时响应（避免被 WebSocket
+  /// 取消订阅的握手阻塞），并立即取消订阅，防止后端离开广播回流到本端把房间
+  /// 重新填回页面；随后调用后端离开接口让房间内其他玩家实时收到座位变化。
+  /// 后端会按 clientId 删除座位，离开者是房主时转移房主身份。
   Future<void> leaveRoom() async {
-    await _roomSubscription?.cancel();
+    final leavingRoom = room.value;
+
+    // 1. 先同步切回创建/加入面板，保证按钮点击立刻有反馈。
+    final subscription = _roomSubscription;
     _roomSubscription = null;
     isWatching.value = false;
     room.value = null;
     statusMessage.value = '已离开当前房间';
+
+    // 2. 立即取消订阅（同步生效，后续事件不再回调），避免下一步的后端离开
+    //    广播又把 room 重新写回页面；cancel 的 future 放到最后再 await，
+    //    即使 socket 关闭握手缓慢也不阻塞已经完成的界面切换。
+    final cancelFuture = subscription?.cancel();
+
+    // 3. 通知后端删除座位并广播；本地已退出，失败也不影响用户离开。
+    if (leavingRoom != null &&
+        leavingRoom.roomCode.isNotEmpty &&
+        clientId.value.isNotEmpty) {
+      try {
+        await _onlineApi.leaveRoom(
+          LeaveOnlineRoomInput(
+            roomCode: leavingRoom.roomCode,
+            clientId: clientId.value,
+          ),
+        );
+      } catch (_) {
+        // 离开是本地动作，后端通知失败无需打断用户；断线兜底仍会清座位。
+      }
+    }
+
+    await cancelFuture;
   }
 
   /// 统一执行创建/加入房间请求，成功后保存快照并启动实时订阅。
@@ -152,7 +183,7 @@ class OnlineRoomController extends GetxController {
     statusMessage.value = '正在监听房间变化';
 
     _roomSubscription = _onlineApi
-        .watchRoomEvents(roomCode)
+        .watchRoomEvents(roomCode, clientId: clientId.value)
         .listen(
           (event) {
             room.value = event.room;

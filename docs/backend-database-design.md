@@ -603,13 +603,35 @@ GET /api/online/rooms/:roomCode
 
 返回当前房间快照，供进入房间页或刷新时使用。
 
+### 离开房间
+
+```text
+POST /api/online/rooms/leave
+```
+
+请求：
+
+```json
+{
+  "roomCode": "A2B3C4",
+  "clientId": "device-client-id"
+}
+```
+
+说明：
+
+- 按 `clientId` 删除当前设备座位，并向房间内其他在线订阅者广播 `room_updated`。
+- 离开者是房主时，把房主转移给剩余最小座位号的玩家，房间继续等待。
+- 房间所有座位删空时，房间 `status` 置为 `closed`，已 closed 的房间无法再加入。
+- 座位已不存在时幂等返回当前快照，不重复广播。
+
 ### 订阅房间事件
 
 ```text
 WebSocket /api/online/rooms/:roomCode/events
 ```
 
-连接后服务端会先发送：
+连接可带 `?clientId=...` 查询参数。连接后服务端会先发送：
 
 ```json
 {
@@ -618,7 +640,7 @@ WebSocket /api/online/rooms/:roomCode/events
 }
 ```
 
-当有人加入或重复进入导致座位变化时，服务端广播：
+当有人加入、离开或重复进入导致座位变化时，服务端广播：
 
 ```json
 {
@@ -630,6 +652,7 @@ WebSocket /api/online/rooms/:roomCode/events
 说明：
 
 - 当前事件只同步房间大厅状态。
+- socket 断开（关 App、断网、切走页面）时，若连接带了 `clientId`，后端会先取消订阅，再用该 `clientId` 删除座位并广播，作为离开兜底。
 - 开始游戏、行动提交和 GameState 广播放到下一阶段设计。
 
 ## Prisma 初步模型
